@@ -15,15 +15,58 @@ async function setupRefererRule() {
     await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds: [RULE_ID], addRules: rules });
 }
 
-chrome.runtime.onInstalled.addListener(setupRefererRule);
-chrome.runtime.onStartup.addListener(setupRefererRule);
+// --- 注册 MAIN world 脚本以穿透 Shadow DOM ---
+async function registerMainWorldScript() {
+    try {
+        // 优先使用 userScripts API (需要开发者模式)
+        if (chrome.userScripts) {
+            const scripts = await chrome.userScripts.getScripts();
+            if (scripts.some(s => s.id === 'shadow-proxy')) {
+                await chrome.userScripts.unregister({ ids: ['shadow-proxy'] });
+            }
+            await chrome.userScripts.register([{
+                id: 'shadow-proxy',
+                world: 'MAIN',
+                matches: ["*://*.manhuagui.com/*", "*://*.mhgui.com/*"],
+                js: [{ file: 'inject.js' }],
+                runAt: 'document_start'
+            }]);
+            console.log("[ManhuaGui Trans] Shadow proxy registered via userScripts");
+        } else {
+            // 回退到 scripting API
+            const scripts = await chrome.scripting.getRegisteredContentScripts();
+            if (scripts.some(s => s.id === 'shadow-proxy')) {
+                await chrome.scripting.unregisterContentScripts({ ids: ['shadow-proxy'] });
+            }
+            await chrome.scripting.registerContentScripts([{
+                id: 'shadow-proxy',
+                world: 'MAIN',
+                matches: ["*://*.manhuagui.com/*", "*://*.mhgui.com/*"],
+                js: ['inject.js'],
+                runAt: 'document_start'
+            }]);
+            console.log("[ManhuaGui Trans] Shadow proxy registered via scripting");
+        }
+    } catch (err) {
+        console.error("[ManhuaGui Trans] Script registration failed:", err);
+    }
+}
+
+chrome.runtime.onInstalled.addListener(() => {
+    setupRefererRule();
+    registerMainWorldScript();
+});
+
+chrome.runtime.onStartup.addListener(() => {
+    setupRefererRule();
+    registerMainWorldScript();
+});
 
 // --- 翻译逻辑 ---
 async function callOpenAITranslate(imgSrc, config) {
     const { baseUrl, apiKey, modelName } = config;
     const finalUrl = `${baseUrl.replace(/\/$/, '')}/chat/completions`;
     
-    // 使用 0-1000 归一化坐标，这是视觉大模型最精准的模式
     const prompt = `你是一个专业的漫画汉化组助手。
 任务：识别图中所有对话气泡和旁白文字，将其日语翻译成简体中文并标注位置。
 坐标规则：使用 [ymin, xmin, ymax, xmax] 格式，范围为 0-1000。
@@ -65,8 +108,6 @@ async function callOpenAITranslate(imgSrc, config) {
 
         const result = await response.json();
         const responseContent = result.choices[0].message.content;
-        console.log("[ManhuaGui Trans] 模型原始输出:", responseContent);
-        
         return parseSafeJSON(responseContent);
     } catch (error) {
         console.error("翻译链路出错:", error);

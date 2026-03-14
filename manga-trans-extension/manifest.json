@@ -1,10 +1,10 @@
 {
   "manifest_version": 3,
   "name": "漫画柜智能翻译助手 (ManhuaGui Trans)",
-  "version": "1.1",
-  "description": "专为漫画柜设计的智能翻译插件，支持自动翻译和章节状态管理。",
-  "permissions": ["storage", "activeTab", "scripting", "declarativeNetRequest"],
-  "host_permissions": ["https://www.manhuagui.com/*", "https://*.hamreus.com/*"],
+  "version": "1.4",
+  "description": "专为漫画柜设计的智能翻译插件，支持自动翻译和章节状态管理，深度适配 ComicRead 脚本。",
+  "permissions": ["storage", "activeTab", "scripting", "declarativeNetRequest", "userScripts"],
+  "host_permissions": ["*://*.manhuagui.com/*", "*://*.mhgui.com/*", "https://*.hamreus.com/*"],
   "action": {
     "default_popup": "popup.html"
   },
@@ -13,10 +13,19 @@
   },
   "content_scripts": [
     {
-      "matches": ["https://www.manhuagui.com/comic/*/*.html*"],
+      "matches": [
+        "*://*.manhuagui.com/comic/*/*.html*",
+        "*://*.mhgui.com/comic/*/*.html*"
+      ],
       "js": ["content.js"],
       "css": ["style.css"],
-      "run_at": "document_end"
+      "run_at": "document_start"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["inject.js"],
+      "matches": ["<all_urls>"]
     }
   ]
 }

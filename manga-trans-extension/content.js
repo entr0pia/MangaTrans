@@ -112,7 +112,9 @@ function renderOverlay(imgElement, results, userWritingMode) {
         if (!box || box.length !== 4) return;
         
         const [ymin, xmin, ymax, xmax] = box;
-        const text = item.text || item.translated_text || "";
+        const rawText = item.text || item.translated_text || "";
+        // 强制移除换行符，让 CSS 处理流式布局
+        const text = rawText.replace(/[\r\n]+/g, "");
 
         // 归一化坐标(0-1000)转换为百分比
         const top = ymin / 10;
@@ -146,10 +148,11 @@ function renderOverlay(imgElement, results, userWritingMode) {
             background: white; padding: 2px 4px; border-radius: 3px;
             box-shadow: 0 1px 4px rgba(0,0,0,0.3); font-weight: bold; color: black;
             font-family: "Microsoft YaHei", sans-serif; font-size: ${fontSize}px;
-            line-height: 1.2; text-align: center; word-break: break-all;
+            line-height: 1.2; text-align: center; 
+            word-break: break-all; white-space: normal;
             max-width: 98%; max-height: 98%; display: flex; align-items: center; justify-content: center;
             border: 2px dashed #ff4d4f;
-            ${isVertical ? 'writing-mode: vertical-rl; text-orientation: upright; height: 100%;' : 'width: 100%;'}
+            ${isVertical ? 'writing-mode: vertical-rl; text-orientation: upright; height: 100%;' : 'width: auto;'}
         `;
         
         textBox.appendChild(textSpan);

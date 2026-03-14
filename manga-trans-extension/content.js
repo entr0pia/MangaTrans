@@ -134,25 +134,30 @@ function renderOverlay(imgElement, results, userWritingMode) {
         const displayWidthPx = (width / 100) * imgElement.clientWidth;
         const displayHeightPx = (height / 100) * imgElement.clientHeight;
         const baseDim = isVertical ? displayWidthPx : displayHeightPx;
-        let fontSize = Math.max(11, Math.min(22, baseDim * 0.42));
+        let fontSize = Math.max(10, Math.min(20, baseDim * 0.4)); // 稍微缩小基础比例
 
         textBox.style.cssText = `
             position: absolute;
             top: ${top}%; left: ${left}%; width: ${width}%; height: ${height}%;
-            display: flex; align-items: center; justify-content: center; overflow: hidden;
+            display: flex; align-items: center; justify-content: center; overflow: visible;
         `;
         
         const textSpan = document.createElement('span');
         textSpan.innerText = text;
         textSpan.style.cssText = `
-            background: white; padding: 2px 4px; border-radius: 3px;
+            background: white; 
+            padding: 4px 8px; /* 增加内边距 */
+            border-radius: 4px;
             box-shadow: 0 1px 4px rgba(0,0,0,0.3); font-weight: bold; color: black;
             font-family: "Microsoft YaHei", sans-serif; font-size: ${fontSize}px;
-            line-height: 1.2; text-align: center; 
+            line-height: 1.3; text-align: center; 
             word-break: break-all; white-space: normal;
-            max-width: 98%; max-height: 98%; display: flex; align-items: center; justify-content: center;
+            max-width: 110%; /* 允许轻微超出容器以保证内容完整 */
+            max-height: 110%;
+            display: flex; align-items: center; justify-content: center;
             border: 2px dashed #ff4d4f;
-            ${isVertical ? 'writing-mode: vertical-rl; text-orientation: upright; height: 100%;' : 'width: auto;'}
+            box-sizing: border-box;
+            ${isVertical ? 'writing-mode: vertical-rl; text-orientation: upright; height: auto; min-height: 100%;' : 'width: auto; min-width: 100%;'}
         `;
         
         textBox.appendChild(textSpan);

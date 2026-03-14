@@ -33,9 +33,9 @@
 
 ### 2. 配置 API
 点击扩展图标打开弹出面板进行配置：
-- **Base URL**: 填入 OpenAI 兼容的 API 地址（如 `https://api.openai.com/v1` 或各类中转地址）。
+- **Base URL**: 填入 OpenAI 兼容的 API 地址（如 `https://generativelanguage.googleapis.com/v1beta/openai/` 或各类中转地址）。
 - **API Key**: 您的模型密钥。
-- **Model Name**: 推荐使用带 Vision 功能的模型，如 `gemini-1.5-flash` 或 `gpt-4o-mini`。
+- **Model Name**: 如 `gemini-3.1-flash-lite-preview`。
 - **排版偏好**: 可选自动、强制横排或强制竖排。
 
 ## 开发规范
@@ -47,6 +47,10 @@
 ## 免责声明
 
 本插件仅供学习与技术交流使用，严禁用于任何商业用途。请支持正版漫画。
+
+## 开源协议
+
+本项目采用 [GPL-3.0](LICENSE) 协议开源。
 
 ---
 Created by [entr0pia](https://github.com/entr0pia)

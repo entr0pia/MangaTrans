@@ -31,8 +31,16 @@ function updateLocalState(enabled) {
     isAutoTranslate = enabled;
     const checkbox = document.getElementById('manga-trans-check');
     if (checkbox) checkbox.checked = enabled;
-    if (enabled) deepScanAndObserve();
-    else removeAllOverlays();
+    
+    if (enabled) {
+        console.log("[ManhuaGui Trans] 翻译已启用，执行扫描...");
+        // 清理一下标记，确保可以重新触发当前页面的翻译
+        document.querySelectorAll('img[data-has-trans]').forEach(img => img.removeAttribute('data-has-trans'));
+        deepScanAndObserve();
+    } else {
+        console.log("[ManhuaGui Trans] 翻译已关闭，移除图层");
+        removeAllOverlays();
+    }
 }
 
 chrome.storage.onChanged.addListener((changes) => {

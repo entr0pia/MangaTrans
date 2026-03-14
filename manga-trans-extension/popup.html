@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        body {
+            width: 280px;
+            padding: 15px;
+            font-family: -apple-system, sans-serif;
+            background: #fff;
+        }
+        h3 { margin-top: 0; color: #333; font-size: 16px; }
+        .config-item { margin-bottom: 12px; }
+        label { display: block; margin-bottom: 4px; font-size: 12px; color: #666; }
+        input[type="text"], input[type="password"] {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            box-sizing: border-box;
+            font-size: 13px;
+        }
+        .save-btn {
+            width: 100%;
+            padding: 10px;
+            background: #ff4d4f;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 500;
+            margin-top: 5px;
+        }
+        .save-btn:hover { background: #ff7875; }
+        .status {
+            font-size: 12px;
+            margin-top: 8px;
+            text-align: center;
+            color: #27ae60;
+            height: 14px;
+        }
+        .hint { font-size: 11px; color: #999; margin-top: 4px; }
+    </style>
+</head>
+<body>
+    <h3>API 配置 (OpenAI 兼容)</h3>
+    <div class="config-item">
+        <label for="baseUrl">API 基础地址 (Base URL)</label>
+        <input type="text" id="baseUrl" placeholder="https://api.openai.com/v1">
+        <div class="hint">例如: https://api.deepseek.com/v1</div>
+    </div>
+    <div class="config-item">
+        <label for="apiKey">API Key</label>
+        <input type="password" id="apiKey" placeholder="sk-...">
+    </div>
+    <div class="config-item">
+        <label for="modelName">模型名称 (Model Name)</label>
+        <input type="text" id="modelName" placeholder="gpt-4o-mini">
+    </div>
+    <div class="config-item">
+        <label for="writingMode">排版偏好</label>
+        <select id="writingMode">
+            <option value="auto">自动 (根据气泡比例)</option>
+            <option value="horizontal">强制横排</option>
+            <option value="vertical">强制竖排</option>
+        </select>
+    </div>
+    <button class="save-btn" id="saveBtn">保存配置</button>
+    <div id="status" class="status"></div>
+
+    <script src="popup.js"></script>
+</body>
+</html>

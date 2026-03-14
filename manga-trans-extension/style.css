@@ -73,7 +73,6 @@ input:checked + .slider:before {
 /* 翻译图层样式 */
 .manga-trans-overlay {
     position: absolute;
-    background: rgba(255, 255, 255, 0.9);
     border-radius: 4px;
     color: #1a1a1a;
     padding: 4px;

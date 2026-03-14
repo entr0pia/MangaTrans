@@ -39,6 +39,17 @@ async function registerMainWorldScript() {
 chrome.runtime.onInstalled.addListener(() => { setupRefererRule(); registerMainWorldScript(); });
 chrome.runtime.onStartup.addListener(() => { setupRefererRule(); registerMainWorldScript(); });
 
+// 监听标签页更新：当页面发生重载（刷新/新开）时，重置自动翻译开关
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+    if (changeInfo.status === 'loading' && tab.url && tab.url.includes("manhuagui.com")) {
+        // 只针对真正的 URL 加载进行重置
+        // 排除掉仅仅是 Hash 变化的情况
+        if (!tab.url.includes('#')) {
+            chrome.storage.sync.set({ isAutoTranslate: false });
+        }
+    }
+});
+
 // --- 翻译逻辑 (带重试机制) ---
 async function callOpenAITranslate(imgSrc, config, retryCount = 0) {
     const { baseUrl, apiKey, modelName } = config;

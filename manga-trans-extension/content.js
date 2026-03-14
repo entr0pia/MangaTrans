@@ -7,14 +7,26 @@ const imageObserver = new IntersectionObserver((entries) => {
     entries.forEach(entry => {
         if (entry.isIntersecting && isAutoTranslate) {
             const img = entry.target;
-            if (img.src && !img.hasAttribute('data-has-trans')) {
-                triggerSingleTranslation(img);
-            }
+            if (img.src && !img.hasAttribute('data-has-trans')) triggerSingleTranslation(img);
         }
     });
 }, { threshold: 0.1 });
 
-// --- 状态同步辅助 ---
+// --- 状态重置逻辑 (针对“刷新重置”需求) ---
+async function handleInitialState() {
+    const navs = performance.getEntriesByType("navigation");
+    const isReload = navs.length > 0 && navs[0].type === "reload";
+    
+    if (isReload) {
+        console.log("[ManhuaGui Trans] 检测到页面刷新, 强制重置状态");
+        await chrome.storage.sync.set({ isAutoTranslate: false });
+        updateLocalState(false);
+    } else {
+        const result = await chrome.storage.sync.get(['isAutoTranslate']);
+        updateLocalState(!!result.isAutoTranslate);
+    }
+}
+
 function updateLocalState(enabled) {
     isAutoTranslate = enabled;
     const checkbox = document.getElementById('manga-trans-check');
@@ -22,6 +34,10 @@ function updateLocalState(enabled) {
     if (enabled) deepScanAndObserve();
     else removeAllOverlays();
 }
+
+chrome.storage.onChanged.addListener((changes) => {
+    if (changes.isAutoTranslate) updateLocalState(changes.isAutoTranslate.newValue);
+});
 
 // --- 深度探测逻辑 ---
 function deepScanAndObserve() {
@@ -43,17 +59,15 @@ function deepScanAndObserve() {
     scan(document.documentElement);
 }
 
-// --- UI 注入 (极速版) ---
 function injectUI() {
     const comicRead = document.getElementById('comicRead');
     const isReadModeActive = comicRead && comicRead.shadowRoot && comicRead.hasAttribute('show');
-
     if (isReadModeActive) {
         document.getElementById('manga-trans-container')?.remove();
         return;
     }
-
-    if (document.getElementById('mangaFile') && !document.getElementById('manga-trans-container')) {
+    const mangaImg = document.getElementById('mangaFile');
+    if (mangaImg && !document.getElementById('manga-trans-container')) {
         const container = document.createElement('div');
         container.id = 'manga-trans-container';
         container.style.cssText = `position:fixed; top:80px; right:20px; z-index:2147483647;`;
@@ -142,13 +156,11 @@ function removeAllOverlays() {
     document.querySelectorAll('img[data-has-trans]').forEach(img => img.removeAttribute('data-has-trans'));
 }
 
-// 辅助：防抖
 function helper_debounce(fn, delay) {
     let timer = null;
     return (...args) => { if (timer) clearTimeout(timer); timer = setTimeout(() => fn(...args), delay); };
 }
 
-// 初始化逻辑
 function setupObservers() {
     window.addEventListener('hashchange', () => {
         if (isAutoTranslate) { removeAllOverlays(); setTimeout(deepScanAndObserve, 500); }
@@ -160,17 +172,14 @@ function setupObservers() {
     domObserver.observe(document.documentElement, { childList: true, subtree: true });
 }
 
-chrome.storage.sync.get(['isAutoTranslate'], (result) => {
-    updateLocalState(!!result.isAutoTranslate);
-    injectUI();
-});
+function checkChapterChange() {
+    const cidMatch = window.location.pathname.match(/\/comic\/\d+\/(\d+)\.html/);
+    const newCid = cidMatch ? cidMatch[1] : null;
+    if (currentCid && newCid !== currentCid) chrome.storage.sync.set({ isAutoTranslate: false });
+    currentCid = newCid;
+}
 
-chrome.storage.onChanged.addListener((changes) => {
-    if (changes.isAutoTranslate) updateLocalState(changes.isAutoTranslate.newValue);
-});
-
+// 初始化
+handleInitialState();
 setupObservers();
-setInterval(() => {
-    injectUI();
-    if (isAutoTranslate) deepScanAndObserve();
-}, 500);
+setInterval(() => { injectUI(); if (isAutoTranslate) deepScanAndObserve(); }, 500);

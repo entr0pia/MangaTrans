@@ -123,29 +123,64 @@ function hideLoading() {
 
 function renderOverlay(imgElement, results, userWritingMode) {
     if (!Array.isArray(results) || !imgElement.isConnected) return;
+
     const parent = imgElement.parentElement;
     if (!parent) return;
     if (getComputedStyle(parent).position === 'static') parent.style.position = 'relative';
+
     parent.querySelectorAll('.manga-trans-overlay-container').forEach(c => c.remove());
+
     const container = document.createElement('div');
     container.className = 'manga-trans-overlay-container';
     container.style.cssText = `position:absolute; top:0; left:0; width:100%; height:100%; pointer-events:none; z-index:100;`;
+
     results.forEach(item => {
         const box = item.box || item.box_2d;
         if (!box) return;
         const [ymin, xmin, ymax, xmax] = box;
-        let isVertical = (userWritingMode === 'vertical') || (userWritingMode === 'auto' && (ymax - ymin) > (xmax - xmin) * 1.1);
-        const fontSize = Math.max(10, Math.min(22, ((ymax - ymin) / 1000) * imgElement.clientHeight * 0.42));
+
+        const widthPct = (xmax - xmin) / 10;
+        const heightPct = (ymax - ymin) / 10;
+
+        // 判定排版
+        let isVertical = (userWritingMode === 'vertical') || (userWritingMode === 'auto' && heightPct > widthPct * 1.1);
+
+        // 计算物理像素尺寸
+        const physWidth = (widthPct / 100) * imgElement.clientWidth;
+        const physHeight = (heightPct / 100) * imgElement.clientHeight;
+
+        // 核心优化：字号应基于气泡的“短边”
+        // 竖排时受限于宽度，横排时受限于高度
+        const shortSide = Math.min(physWidth, physHeight);
+        let fontSize = Math.max(12, Math.min(22, shortSide * 0.5)); 
+
+        // 如果文字非常多，稍微缩放
+        const text = item.text || item.translated_text || "";
+        if (text.length > 15) fontSize *= 0.85;
+
         const textBox = document.createElement('div');
-        textBox.style.cssText = `position:absolute; top:${ymin/10}%; left:${xmin/10}%; width:${(xmax-xmin)/10}%; height:${(ymax-ymin)/10}%; display:flex; align-items:center; justify-content:center;`;
+        textBox.style.cssText = `
+            position: absolute;
+            top: ${ymin/10}%; left: ${xmin/10}%; width: ${widthPct}%; height: ${heightPct}%;
+            display: flex; align-items: center; justify-content: center;
+        `;
+
         const textSpan = document.createElement('span');
-        textSpan.innerText = item.text || item.translated_text || "";
-        textSpan.style.cssText = `background:white; padding:4px 8px; border-radius:4px; box-shadow:0 1px 4px rgba(0,0,0,0.3); font-weight:bold; color:black; font-size:${fontSize}px; line-height:1.3; text-align:center; word-break:break-all; border:2px dashed #ff4d4f; box-sizing:border-box; ${isVertical ? 'writing-mode:vertical-rl; text-orientation:upright; height:auto; min-height:100%;' : 'width:auto; min-width:100%;'}`;
+        textSpan.innerText = text;
+        textSpan.style.cssText = `
+            background: white; padding: 4px 8px; border-radius: 4px;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.3); font-weight: bold; color: black;
+            font-size: ${fontSize}px; line-height: 1.2; text-align: center; word-break: break-all;
+            border: 2px dashed #ff4d4f; box-sizing: border-box;
+            max-width: 100%; max-height: 100%; display: flex; align-items: center; justify-content: center;
+            ${isVertical ? 'writing-mode: vertical-rl; text-orientation: upright; height: auto; min-height: 80%;' : 'width: auto; min-width: 80%;'}
+        `;
         textBox.appendChild(textSpan);
         container.appendChild(textBox);
     });
     parent.appendChild(container);
 }
+
 
 function removeAllOverlays() {
     document.querySelectorAll('.manga-trans-overlay-container').forEach(el => el.remove());

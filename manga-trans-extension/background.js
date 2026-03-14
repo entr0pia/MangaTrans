@@ -54,20 +54,25 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
 async function callOpenAITranslate(imgSrc, config, retryCount = 0) {
     const { baseUrl, apiKey, modelName } = config;
     const finalUrl = `${baseUrl.replace(/\/$/, '')}/chat/completions`;
-    
+    // 使用 0-1000 归一化坐标，这是视觉大模型最精准的模式
     const prompt = `你是一个专业的漫画汉化组助手。
-任务：识别图中所有对话气泡和旁白文字，将其日语翻译成简体中文并标注位置。
-坐标规则：使用 [ymin, xmin, ymax, xmax] 格式，范围为 0-1000。
-注意：(0,0) 必须是图像文件的绝对左上角顶点，(1000,1000) 是绝对右下角顶点。请务必包含图像边缘的任何白边或黑边，不要自行裁剪。
-要求：译文请提供平铺的文本，不要包含任何换行符(\\n)。
+    任务：识别图中所有对话气泡和旁白文字，将其日语翻译成简体中文并标注位置。
+    坐标规则：使用 [ymin, xmin, ymax, xmax] 格式，范围为 0-1000。
+    注意：(0,0) 必须是图像文件的绝对左上角顶点，(1000,1000) 是绝对右下角顶点。请务必包含图像边缘的任何白边或黑边，不要自行裁剪。
+    过滤规则：请务必忽略以下内容：
+    1. 画面外的标题、作者名、卷标、章节号。
+    2. 页面边缘或角上的页码、日期、出版信息。
+    3. 网站水印、App 下载引导、广告文字。
+    要求：仅识别分镜内的对话气泡和旁白。译文请提供平铺的文本，不要包含任何换行符(\\n)。
 
-返回格式 (严格 JSON 数组)：
-[
-  {
+    返回格式 (严格 JSON 数组)：
+    [
+    {
     "box": [ymin, xmin, ymax, xmax],
     "text": "简体中文译文"
-  }
-]`;
+    }
+    ]`;
+
 
     try {
         console.log(`[ManhuaGui Trans] 正在处理图片 (尝试 ${retryCount + 1})...`);

@@ -1,0 +1,16 @@
+<svg width="128" height="128" viewBox="0 0 128 128" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- 背景底色，使用主题红 -->
+  <rect width="128" height="128" rx="28" fill="#FF4D4F"/>
+  
+  <!-- 对话气泡主体 -->
+  <path d="M32 36C32 31.5817 35.5817 28 40 28H88C92.4183 28 96 31.5817 96 36V72C96 76.4183 92.4183 80 88 80H60L40 92V80C35.5817 80 32 76.4183 32 72V36Z" fill="white"/>
+  
+  <!-- 内部文字：文 (Wen) -->
+  <path d="M48 42H64M56 42V46M44 50H68M50 50C50 56 46 62 38 64M62 50C62 56 66 62 74 64" stroke="#FF4D4F" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+  
+  <!-- 内部文字：A -->
+  <path d="M76 74L84 54L92 74M78 69H90" stroke="#FF4D4F" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+  
+  <!-- 装饰：代表智能的星星 -->
+  <path d="M102 24L104 30L110 32L104 34L102 40L100 34L94 32L100 30L102 24Z" fill="white" opacity="0.8"/>
+</svg>

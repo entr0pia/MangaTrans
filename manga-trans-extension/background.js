@@ -18,52 +18,29 @@ async function setupRefererRule() {
 // --- 注册 MAIN world 脚本以穿透 Shadow DOM ---
 async function registerMainWorldScript() {
     try {
-        // 优先使用 userScripts API (需要开发者模式)
         if (chrome.userScripts) {
             const scripts = await chrome.userScripts.getScripts();
-            if (scripts.some(s => s.id === 'shadow-proxy')) {
-                await chrome.userScripts.unregister({ ids: ['shadow-proxy'] });
-            }
+            if (scripts.some(s => s.id === 'shadow-proxy')) await chrome.userScripts.unregister({ ids: ['shadow-proxy'] });
             await chrome.userScripts.register([{
-                id: 'shadow-proxy',
-                world: 'MAIN',
-                matches: ["*://*.manhuagui.com/*", "*://*.mhgui.com/*"],
-                js: [{ file: 'inject.js' }],
-                runAt: 'document_start'
+                id: 'shadow-proxy', world: 'MAIN', matches: ["*://*.manhuagui.com/*", "*://*.mhgui.com/*"],
+                js: [{ file: 'inject.js' }], runAt: 'document_start'
             }]);
-            console.log("[ManhuaGui Trans] Shadow proxy registered via userScripts");
         } else {
-            // 回退到 scripting API
             const scripts = await chrome.scripting.getRegisteredContentScripts();
-            if (scripts.some(s => s.id === 'shadow-proxy')) {
-                await chrome.scripting.unregisterContentScripts({ ids: ['shadow-proxy'] });
-            }
+            if (scripts.some(s => s.id === 'shadow-proxy')) await chrome.scripting.unregisterContentScripts({ ids: ['shadow-proxy'] });
             await chrome.scripting.registerContentScripts([{
-                id: 'shadow-proxy',
-                world: 'MAIN',
-                matches: ["*://*.manhuagui.com/*", "*://*.mhgui.com/*"],
-                js: ['inject.js'],
-                runAt: 'document_start'
+                id: 'shadow-proxy', world: 'MAIN', matches: ["*://*.manhuagui.com/*", "*://*.mhgui.com/*"],
+                js: ['inject.js'], runAt: 'document_start'
             }]);
-            console.log("[ManhuaGui Trans] Shadow proxy registered via scripting");
         }
-    } catch (err) {
-        console.error("[ManhuaGui Trans] Script registration failed:", err);
-    }
+    } catch (err) { console.error("[ManhuaGui Trans] Script registration failed:", err); }
 }
 
-chrome.runtime.onInstalled.addListener(() => {
-    setupRefererRule();
-    registerMainWorldScript();
-});
+chrome.runtime.onInstalled.addListener(() => { setupRefererRule(); registerMainWorldScript(); });
+chrome.runtime.onStartup.addListener(() => { setupRefererRule(); registerMainWorldScript(); });
 
-chrome.runtime.onStartup.addListener(() => {
-    setupRefererRule();
-    registerMainWorldScript();
-});
-
-// --- 翻译逻辑 ---
-async function callOpenAITranslate(imgSrc, config) {
+// --- 翻译逻辑 (带重试机制) ---
+async function callOpenAITranslate(imgSrc, config, retryCount = 0) {
     const { baseUrl, apiKey, modelName } = config;
     const finalUrl = `${baseUrl.replace(/\/$/, '')}/chat/completions`;
     
@@ -82,13 +59,16 @@ async function callOpenAITranslate(imgSrc, config) {
 ]`;
 
     try {
-        console.log("[ManhuaGui Trans] 获取图片中...", imgSrc);
+        console.log(`[ManhuaGui Trans] 正在处理图片 (尝试 ${retryCount + 1})...`);
         const imgBlob = await fetch(imgSrc).then(r => r.blob());
         const base64Data = await new Promise((resolve) => {
             const reader = new FileReader();
             reader.onloadend = () => resolve(reader.result);
             reader.readAsDataURL(imgBlob);
         });
+
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 30000); // 30秒超时
 
         const response = await fetch(finalUrl, {
             method: "POST",
@@ -103,14 +83,31 @@ async function callOpenAITranslate(imgSrc, config) {
                     ]
                 }],
                 temperature: 0
-            })
+            }),
+            signal: controller.signal
         });
+
+        clearTimeout(timeoutId);
+
+        if (!response.ok) {
+            if ((response.status === 429 || response.status >= 500) && retryCount < 2) {
+                console.warn(`[ManhuaGui Trans] API 繁忙 (${response.status}), 等待重试...`);
+                await new Promise(r => setTimeout(r, 2000 * (retryCount + 1)));
+                return callOpenAITranslate(imgSrc, config, retryCount + 1);
+            }
+            const errBody = await response.text();
+            throw new Error(`HTTP ${response.status}: ${errBody}`);
+        }
 
         const result = await response.json();
         const responseContent = result.choices[0].message.content;
         return parseSafeJSON(responseContent);
     } catch (error) {
-        console.error("翻译链路出错:", error);
+        if ((error.name === 'TypeError' || error.name === 'AbortError') && retryCount < 2) {
+            console.warn(`[ManhuaGui Trans] 网络错误: ${error.message}, 准备重试...`);
+            await new Promise(r => setTimeout(r, 1500 * (retryCount + 1)));
+            return callOpenAITranslate(imgSrc, config, retryCount + 1);
+        }
         throw error;
     }
 }

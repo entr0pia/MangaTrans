@@ -74,7 +74,6 @@ input:checked + .slider:before {
 .manga-trans-overlay {
     position: absolute;
     background: rgba(255, 255, 255, 0.9);
-    border: 1px dashed #ff4d4f;
     border-radius: 4px;
     color: #1a1a1a;
     padding: 4px;

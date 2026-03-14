@@ -41,11 +41,31 @@ function observeMangaReader() {
     new MutationObserver((mutations) => {
         mutations.forEach((mutation) => {
             if (mutation.attributeName === 'src' && isAutoTranslate) {
-                removeAllOverlays();
-                triggerTranslation();
+                console.log("[ManhuaGui Trans] 图片源已变更，准备翻页翻译...");
+                handlePageChange(mangaImg);
             }
         });
     }).observe(mangaImg, { attributes: true });
+}
+
+function handlePageChange(img) {
+    removeAllOverlays();
+    if (translateTimeout) clearTimeout(translateTimeout);
+    if (img.complete) {
+        scheduleTranslation();
+    } else {
+        img.onload = () => {
+            scheduleTranslation();
+            img.onload = null;
+        };
+    }
+}
+
+let translateTimeout = null;
+function scheduleTranslation() {
+    translateTimeout = setTimeout(() => {
+        triggerTranslation();
+    }, 500);
 }
 
 async function triggerTranslation() {
@@ -104,21 +124,17 @@ function renderOverlay(imgElement, data, userWritingMode) {
 
     results.forEach(item => {
         const [ymin, xmin, ymax, xmax] = item.box_2d;
-        
-        // 计算缩放比：实际显示宽度 / 模型感知的画布宽度
         const scaleX = 100 / canvas_width;
         const scaleY = 100 / canvas_height;
 
         const textBox = document.createElement('div');
         textBox.className = 'manga-trans-overlay';
         
-        // 判定排版方式
         let isVertical = false;
         if (userWritingMode === 'vertical') isVertical = true;
         else if (userWritingMode === 'horizontal') isVertical = false;
         else isVertical = (ymax - ymin) > (xmax - xmin) * 1.1;
 
-        // 估算字号
         const boxWidthPx = ((xmax - xmin) / canvas_width) * imgElement.clientWidth;
         const boxHeightPx = ((ymax - ymin) / canvas_height) * imgElement.clientHeight;
         const baseDim = isVertical ? boxWidthPx : boxHeightPx;
@@ -162,13 +178,29 @@ function init() {
     injectUI();
     checkChapterChange();
     observeMangaReader();
+
+    window.addEventListener('hashchange', () => {
+        const mangaImg = document.getElementById('mangaFile');
+        if (mangaImg && isAutoTranslate) {
+            handlePageChange(mangaImg);
+        }
+    });
 }
 
 let lastUrl = location.href;
 new MutationObserver(() => {
     if (location.href !== lastUrl) {
+        const oldBase = lastUrl.split('#')[0];
+        const newBase = location.href.split('#')[0];
         lastUrl = location.href;
-        checkChapterChange();
+        if (oldBase !== newBase) {
+            checkChapterChange();
+        } else {
+            const mangaImg = document.getElementById('mangaFile');
+            if (mangaImg && isAutoTranslate) {
+                handlePageChange(mangaImg);
+            }
+        }
     }
 }).observe(document, { subtree: true, childList: true });
 

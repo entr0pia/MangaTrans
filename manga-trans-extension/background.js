@@ -74,12 +74,12 @@ async function callOpenAITranslate(imgSrc, config, imageSize) {
                             { type: "text", text: prompt },
                             { type: "image_url", image_url: { url: base64Data } }
                         ]
-                    }
-                ],
-                max_tokens: 4096,
-                temperature: 0
-            })
-        });
+                        }
+                        ],
+                        temperature: 0
+                        })
+                        });
+
 
         const result = await response.json();
         const responseContent = result.choices[0].message.content;

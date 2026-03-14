@@ -1,21 +1,17 @@
-// --- 动态修改 Referer 以绕过防盗链 ---
-const RULE_ID = 1;
+// --- 全局会话状态 ---
+let tabGlossaries = {}; // 按标签页隔离术语表: { tabId: { "原文": "译文" } }
 
+// --- 动态修改 Referer ---
+const RULE_ID = 1;
 async function setupRefererRule() {
-    const rules = [
-        {
-            id: RULE_ID, priority: 1,
-            action: {
-                type: "modifyHeaders",
-                requestHeaders: [{ header: "referer", operation: "set", value: "https://www.manhuagui.com/" }]
-            },
-            condition: { urlFilter: "|https://*.hamreus.com/*", resourceTypes: ["xmlhttprequest"] }
-        }
-    ];
+    const rules = [{
+        id: RULE_ID, priority: 1,
+        action: { type: "modifyHeaders", requestHeaders: [{ header: "referer", operation: "set", value: "https://www.manhuagui.com/" }] },
+        condition: { urlFilter: "|https://*.hamreus.com/*", resourceTypes: ["xmlhttprequest"] }
+    }];
     await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds: [RULE_ID], addRules: rules });
 }
 
-// --- 注册 MAIN world 脚本以穿透 Shadow DOM ---
 async function registerMainWorldScript() {
     try {
         if (chrome.userScripts) {
@@ -25,13 +21,6 @@ async function registerMainWorldScript() {
                 id: 'shadow-proxy', world: 'MAIN', matches: ["*://*.manhuagui.com/*", "*://*.mhgui.com/*"],
                 js: [{ file: 'inject.js' }], runAt: 'document_start'
             }]);
-        } else {
-            const scripts = await chrome.scripting.getRegisteredContentScripts();
-            if (scripts.some(s => s.id === 'shadow-proxy')) await chrome.scripting.unregisterContentScripts({ ids: ['shadow-proxy'] });
-            await chrome.scripting.registerContentScripts([{
-                id: 'shadow-proxy', world: 'MAIN', matches: ["*://*.manhuagui.com/*", "*://*.mhgui.com/*"],
-                js: ['inject.js'], runAt: 'document_start'
-            }]);
         }
     } catch (err) { console.error("[ManhuaGui Trans] Script registration failed:", err); }
 }
@@ -39,44 +28,55 @@ async function registerMainWorldScript() {
 chrome.runtime.onInstalled.addListener(() => { setupRefererRule(); registerMainWorldScript(); });
 chrome.runtime.onStartup.addListener(() => { setupRefererRule(); registerMainWorldScript(); });
 
-// 监听标签页更新：当页面发生重载（刷新/新开）时，重置自动翻译开关
+// 监听标签页重载：仅在“硬重载”时清空该标签页的术语表
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
     if (changeInfo.status === 'loading' && tab.url && tab.url.includes("manhuagui.com")) {
-        // 只针对真正的 URL 加载进行重置
-        // 排除掉仅仅是 Hash 变化的情况
+        // 排除掉仅仅是 Hash 变化（SPA翻页）的情况
         if (!tab.url.includes('#')) {
-            chrome.storage.sync.set({ isAutoTranslate: false });
+            console.log(`[ManhuaGui Trans] 标签页 ${tabId} 刷新，清空术语表`);
+            delete tabGlossaries[tabId];
         }
     }
 });
 
-// --- 翻译逻辑 (带重试机制) ---
-async function callOpenAITranslate(imgSrc, config, retryCount = 0) {
-    const { baseUrl, apiKey, modelName } = config;
+// 标签页关闭时清理内存
+chrome.tabs.onRemoved.addListener((tabId) => {
+    delete tabGlossaries[tabId];
+});
+
+// --- 翻译逻辑 ---
+async function callOpenAITranslate(imgSrc, config, tabId, retryCount = 0) {
+    const { baseUrl, apiKey, modelName, targetLang } = config;
     const finalUrl = `${baseUrl.replace(/\/$/, '')}/chat/completions`;
-    // 使用 0-1000 归一化坐标，这是视觉大模型最精准的模式
+    const finalLang = targetLang || "简体中文";
+
+    // 初始化并获取该标签页的术语表
+    if (!tabGlossaries[tabId]) tabGlossaries[tabId] = {};
+    const glossary = tabGlossaries[tabId];
+
+    const glossaryContext = Object.entries(glossary)
+        .map(([raw, trans]) => `${raw} -> ${trans}`)
+        .join('\n');
+
     const prompt = `你是一个专业的漫画汉化组助手。
-    任务：识别图中所有对话气泡和旁白文字，将其日语翻译成简体中文并标注位置。
-    坐标规则：使用 [ymin, xmin, ymax, xmax] 格式，范围为 0-1000。
-    注意：(0,0) 必须是图像文件的绝对左上角顶点，(1000,1000) 是绝对右下角顶点。请务必包含图像边缘的任何白边或黑边，不要自行裁剪。
-    过滤规则：请务必忽略以下内容：
-    1. 画面外的标题、作者名、卷标、章节号。
-    2. 页面边缘或角上的页码、日期、出版信息。
-    3. 网站水印、App 下载引导、广告文字。
-    4. **仅包含标点符号（如 ?、!、...、～ 等）而没有任何文字内容的气泡。**
-    要求：仅识别分镜内的对话气泡和旁白。译文请提供平铺的文本，不要包含任何换行符(\\n)。
+任务：识别图中所有对话气泡和旁白文字，将其日语翻译成${finalLang}并标注位置。
+坐标规则：使用 [ymin, xmin, ymax, xmax] 格式，范围为 0-1000。
+注意：(0,0) 必须是图像文件的绝对左上角顶点。不要自行裁剪。
+要求：译文请提供平铺的文本，不要包含换行符。
 
-    返回格式 (严格 JSON 数组)：
-    [
-    {
-    "box": [ymin, xmin, ymax, xmax],
-    "text": "简体中文译文"
-    }
-    ]`;
+专有名词一致性：
+${glossaryContext ? `请务必遵循以下已有的翻译对照：\n${glossaryContext}` : '请识别并统一人名、地名等专有名词的翻译。'}
 
+你必须返回一个 JSON 对象，结构如下：
+{
+  "translations": [
+    { "box": [ymin, xmin, ymax, xmax], "text": "译文" }
+  ],
+  "new_terms": { "原文": "译文" } // 请提取本页新发现的专有名词（如人名、地名、冷门的特有名词）
+}`;
 
     try {
-        console.log(`[ManhuaGui Trans] 正在处理图片 (尝试 ${retryCount + 1})...`);
+        console.log(`[ManhuaGui Trans] [Tab:${tabId}] 请求翻译 (尝试 ${retryCount + 1})...`);
         const imgBlob = await fetch(imgSrc).then(r => r.blob());
         const base64Data = await new Promise((resolve) => {
             const reader = new FileReader();
@@ -85,45 +85,42 @@ async function callOpenAITranslate(imgSrc, config, retryCount = 0) {
         });
 
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 30000); // 30秒超时
+        const timeoutId = setTimeout(() => controller.abort(), 35000);
 
         const response = await fetch(finalUrl, {
             method: "POST",
             headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` },
             body: JSON.stringify({
                 model: modelName || "gpt-4o-mini",
-                messages: [{
-                    role: "user",
-                    content: [
-                        { type: "text", text: prompt },
-                        { type: "image_url", image_url: { url: base64Data } }
-                    ]
-                }],
+                messages: [{ role: "user", content: [{ type: "text", text: prompt }, { type: "image_url", image_url: { url: base64Data } }] }],
                 temperature: 0
             }),
             signal: controller.signal
         });
-
         clearTimeout(timeoutId);
 
         if (!response.ok) {
             if ((response.status === 429 || response.status >= 500) && retryCount < 2) {
-                console.warn(`[ManhuaGui Trans] API 繁忙 (${response.status}), 等待重试...`);
-                await new Promise(r => setTimeout(r, 2000 * (retryCount + 1)));
-                return callOpenAITranslate(imgSrc, config, retryCount + 1);
+                await new Promise(r => setTimeout(r, 2000));
+                return callOpenAITranslate(imgSrc, config, tabId, retryCount + 1);
             }
-            const errBody = await response.text();
-            throw new Error(`HTTP ${response.status}: ${errBody}`);
+            throw new Error(`HTTP ${response.status}`);
         }
 
         const result = await response.json();
-        const responseContent = result.choices[0].message.content;
-        return parseSafeJSON(responseContent);
+        const content = result.choices[0].message.content;
+        const parsed = parseSafeJSON(content);
+
+        if (parsed.new_terms) {
+            Object.assign(glossary, parsed.new_terms);
+            console.log(`[ManhuaGui Trans] [Tab:${tabId}] 术语表更新:`, glossary);
+        }
+
+        return parsed.translations || [];
     } catch (error) {
         if ((error.name === 'TypeError' || error.name === 'AbortError') && retryCount < 2) {
-            console.warn(`[ManhuaGui Trans] 网络错误: ${error.message}, 准备重试...`);
-            await new Promise(r => setTimeout(r, 1500 * (retryCount + 1)));
-            return callOpenAITranslate(imgSrc, config, retryCount + 1);
+            await new Promise(r => setTimeout(r, 1500));
+            return callOpenAITranslate(imgSrc, config, tabId, retryCount + 1);
         }
         throw error;
     }
@@ -131,31 +128,20 @@ async function callOpenAITranslate(imgSrc, config, retryCount = 0) {
 
 function parseSafeJSON(str) {
     let cleaned = str.replace(/```json|```/g, '').trim();
-    const arrayMatch = cleaned.match(/\[[\s\S]*\]/);
-    if (arrayMatch) return JSON.parse(arrayMatch[0]);
-    const objMatch = cleaned.match(/\{[\s\S]*\}/);
-    if (objMatch) {
-        const obj = JSON.parse(objMatch[0]);
-        return obj.results || obj.data || (Array.isArray(obj) ? obj : []);
-    }
-    return JSON.parse(cleaned);
+    const match = cleaned.match(/\{[\s\S]*\}/);
+    return JSON.parse(match ? match[0] : cleaned);
 }
 
-// --- 消息处理中心 ---
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.type === "TRANSLATE_IMAGE") {
-        chrome.storage.sync.get(['baseUrl', 'apiKey', 'modelName'], async (result) => {
-            if (!result.apiKey) {
-                sendResponse({ success: false, error: "请配置 API Key" });
-                return;
-            }
+        const tabId = sender.tab.id;
+        chrome.storage.sync.get(['baseUrl', 'apiKey', 'modelName', 'targetLang'], async (result) => {
+            if (!result.apiKey) { sendResponse({ success: false, error: "未配置 API" }); return; }
             try {
-                const data = await callOpenAITranslate(request.imgSrc, result);
+                const data = await callOpenAITranslate(request.imgSrc, result, tabId);
                 sendResponse({ success: true, data: data });
-            } catch (err) {
-                sendResponse({ success: false, error: err.message });
-            }
+            } catch (err) { sendResponse({ success: false, error: err.message }); }
         });
-        return true; 
+        return true;
     }
 });

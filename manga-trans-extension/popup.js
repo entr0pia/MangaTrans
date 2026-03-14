@@ -4,13 +4,15 @@ document.getElementById('saveBtn').addEventListener('click', () => {
     const apiKey = document.getElementById('apiKey').value;
     const modelName = document.getElementById('modelName').value;
     const writingMode = document.getElementById('writingMode').value;
+    const targetLang = document.getElementById('targetLang').value;
     const status = document.getElementById('status');
 
     chrome.storage.sync.set({ 
         baseUrl: baseUrl,
         apiKey: apiKey,
         modelName: modelName,
-        writingMode: writingMode
+        writingMode: writingMode,
+        targetLang: targetLang
     }, () => {
         status.textContent = '设置已保存';
         setTimeout(() => { status.textContent = ''; }, 2000);
@@ -24,10 +26,11 @@ autoTransCheck.addEventListener('change', (e) => {
 });
 
 // 加载初始状态
-chrome.storage.sync.get(['baseUrl', 'apiKey', 'modelName', 'writingMode', 'isAutoTranslate'], (result) => {
+chrome.storage.sync.get(['baseUrl', 'apiKey', 'modelName', 'writingMode', 'targetLang', 'isAutoTranslate'], (result) => {
     if (result.baseUrl) document.getElementById('baseUrl').value = result.baseUrl;
     if (result.apiKey) document.getElementById('apiKey').value = result.apiKey;
     if (result.modelName) document.getElementById('modelName').value = result.modelName;
     if (result.writingMode) document.getElementById('writingMode').value = result.writingMode;
+    if (result.targetLang) document.getElementById('targetLang').value = result.targetLang;
     if (result.isAutoTranslate !== undefined) autoTransCheck.checked = result.isAutoTranslate;
 });

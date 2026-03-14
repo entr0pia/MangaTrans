@@ -1,5 +1,5 @@
 // --- 状态管理 ---
-let isAutoTranslate = false;
+let isAutoTranslate = false; // 内存变量，页面刷新即重置
 let currentCid = null;
 
 // 使用 IntersectionObserver 监听图片进入视口
@@ -12,21 +12,7 @@ const imageObserver = new IntersectionObserver((entries) => {
     });
 }, { threshold: 0.1 });
 
-// --- 状态重置逻辑 (针对“刷新重置”需求) ---
-async function handleInitialState() {
-    const navs = performance.getEntriesByType("navigation");
-    const isReload = navs.length > 0 && navs[0].type === "reload";
-    
-    if (isReload) {
-        console.log("[ManhuaGui Trans] 检测到页面刷新, 强制重置状态");
-        await chrome.storage.sync.set({ isAutoTranslate: false });
-        updateLocalState(false);
-    } else {
-        const result = await chrome.storage.sync.get(['isAutoTranslate']);
-        updateLocalState(!!result.isAutoTranslate);
-    }
-}
-
+// --- 状态同步辅助 ---
 function updateLocalState(enabled) {
     isAutoTranslate = enabled;
     const checkbox = document.getElementById('manga-trans-check');
@@ -34,7 +20,6 @@ function updateLocalState(enabled) {
     
     if (enabled) {
         console.log("[ManhuaGui Trans] 翻译已启用，执行扫描...");
-        // 清理一下标记，确保可以重新触发当前页面的翻译
         document.querySelectorAll('img[data-has-trans]').forEach(img => img.removeAttribute('data-has-trans'));
         deepScanAndObserve();
     } else {
@@ -43,8 +28,22 @@ function updateLocalState(enabled) {
     }
 }
 
+// 监听 storage 变化（同步开关及配置项变更自动重译）
 chrome.storage.onChanged.addListener((changes) => {
-    if (changes.isAutoTranslate) updateLocalState(changes.isAutoTranslate.newValue);
+    // 1. 开关变更
+    if (changes.isAutoTranslate) {
+        updateLocalState(changes.isAutoTranslate.newValue);
+    }
+    
+    // 2. 配置项变更 (排版或语言)
+    const isConfigChanged = changes.writingMode || changes.targetLang;
+    if (isConfigChanged && isAutoTranslate) {
+        console.log("[ManhuaGui Trans] 检测到配置项变更，正在重新翻译...");
+        removeAllOverlays();
+        // 清除标记，强制重新触发翻译
+        document.querySelectorAll('img[data-has-trans]').forEach(img => img.removeAttribute('data-has-trans'));
+        deepScanAndObserve();
+    }
 });
 
 // --- 深度探测逻辑 ---
@@ -74,20 +73,18 @@ function injectUI() {
         document.getElementById('manga-trans-container')?.remove();
         return;
     }
-    const mangaImg = document.getElementById('mangaFile');
-    if (mangaImg && !document.getElementById('manga-trans-container')) {
+    if (document.getElementById('mangaFile') && !document.getElementById('manga-trans-container')) {
         const container = document.createElement('div');
         container.id = 'manga-trans-container';
         container.style.cssText = `position:fixed; top:80px; right:20px; z-index:2147483647;`;
         container.innerHTML = `
             <div class="trans-panel" style="background:#1a1a1a; border:1px solid #333; padding:10px 15px; border-radius:12px; display:flex; align-items:center; gap:12px; color:#eee; box-shadow: 0 4px 12px rgba(0,0,0,0.5);">
                 <span style="font-size:14px; font-weight:bold;">智能翻译</span>
-                <input type="checkbox" id="manga-trans-check" style="width:18px; height:18px; cursor:pointer; accent-color:#ff4d4f;">
+                <input type="checkbox" id="manga-trans-check" ${isAutoTranslate ? 'checked' : ''} style="width:18px; height:18px; cursor:pointer; accent-color:#ff4d4f;">
             </div>
         `;
         document.body.appendChild(container);
         const cb = document.getElementById('manga-trans-check');
-        cb.checked = isAutoTranslate;
         cb.addEventListener('change', (e) => chrome.storage.sync.set({ isAutoTranslate: e.target.checked }));
     }
 }
@@ -96,7 +93,7 @@ async function triggerSingleTranslation(img) {
     if (!isAutoTranslate || img.hasAttribute('data-has-trans')) return;
     img.setAttribute('data-has-trans', 'loading');
     showLoading();
-    chrome.storage.sync.get(['writingMode'], (prefs) => {
+    chrome.storage.sync.get(['writingMode', 'targetLang'], (prefs) => {
         chrome.runtime.sendMessage({ type: "TRANSLATE_IMAGE", imgSrc: img.src }, (response) => {
             hideLoading();
             if (response && response.success) {
@@ -162,6 +159,18 @@ function removeAllOverlays() {
     }
     clearShadow(document);
     document.querySelectorAll('img[data-has-trans]').forEach(img => img.removeAttribute('data-has-trans'));
+}
+
+async function handleInitialState() {
+    const navs = performance.getEntriesByType("navigation");
+    const isReload = navs.length > 0 && navs[0].type === "reload";
+    if (isReload) {
+        await chrome.storage.sync.set({ isAutoTranslate: false });
+        updateLocalState(false);
+    } else {
+        const result = await chrome.storage.sync.get(['isAutoTranslate']);
+        updateLocalState(!!result.isAutoTranslate);
+    }
 }
 
 function helper_debounce(fn, delay) {

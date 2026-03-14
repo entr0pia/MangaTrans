@@ -160,6 +160,7 @@ function renderOverlay(imgElement, data, userWritingMode) {
             font-family: "Microsoft YaHei", sans-serif; font-size: ${fontSize}px;
             line-height: 1.2; text-align: center; word-break: break-all;
             max-width: 98%; max-height: 98%; display: flex; align-items: center; justify-content: center;
+            border: 2px dashed #ff4d4f; /* 彩色虚线边框：红色 */
             ${isVertical ? 'writing-mode: vertical-rl; text-orientation: upright; height: 100%;' : 'width: 100%;'}
         `;
         

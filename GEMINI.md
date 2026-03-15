@@ -1,46 +1,55 @@
 # Project Overview
 
-`ManhuaGui Trans` is a Chrome extension project specifically designed to enhance the reading experience on [ManhuaGui](https://www.manhuagui.com/). It integrates large language models (LLM) to provide automated translation of manga pages directly within the browser.
+`MangaTrans` (智能漫画翻译助手) is a sophisticated Chrome extension designed to provide real-time, LLM-powered translation for web manga. It leverages multimodal large language models (via OpenAI-compatible APIs) to perform OCR, translation, and seamless overlay rendering.
+
+While highly generalizable, it currently features deep, specific adaptations for [ManhuaGui](https://www.manhuagui.com/).
 
 ## Key Features
 
-- **Specific Domain Adaptation**: Tailored for the ManhuaGui website's DOM structure and reading logic.
-- **Smart Translation Overlay**: Uses LLM-powered OCR and translation to identify text bubbles and overlay translations on a new layer.
-- **Automatic State Management**: Includes an "Auto-Translate" toggle that maintains its state within a single chapter but automatically resets when navigating to a new chapter.
-- **Dynamic Page Tracking**: Uses `MutationObserver` to detect page flips (image source changes) in the reader and trigger translation.
+- **🚀 Reading Mode Mastery**: Deeply integrates with the `ComicRead.js` userscript. It can pierce through closed Shadow DOMs to detect and translate manga images in enhanced reading or scroll modes.
+- **🤖 Intelligent Translation Flow**:
+  - **OpenAI Compatibility**: Supports any OpenAI-compatible endpoint (e.g., Gemini 1.5, GPT-4o, DeepSeek).
+  - **Terminology Consistency**: Maintains a per-tab in-memory glossary to ensure character names and locations are translated consistently across pages.
+  - **Smart Filtering**: Automatically ignores page numbers, titles, watermarks, and bubbles containing only punctuation.
+- **📏 Adaptive Rendering Engine**:
+  - **Normalized Coordinates**: Uses a 0-1000 coordinate system for precise bubble alignment regardless of screen resolution.
+  - **Short-side Scaling**: Dynamically calculates font sizes based on bubble geometry to prevent "underfill" or text overflow.
+  - **Vertical Text Support**: Automatically detects Japanese vertical bubbles and applies `writing-mode: vertical-rl`.
+- **⏱️ Advanced Lifecycle Management**:
+  - **Reload Reset**: Automatically toggles off translation on page hard-reloads (F5) to save tokens, while preserving state during internal mode transitions.
+  - **Lazy Loading Support**: Uses `IntersectionObserver` to trigger translations as new images scroll into the viewport in long-strip mode.
 
 ## Technologies
 
 - **Browser Extension**: Manifest V3
-- **Frontend**: Vanilla JavaScript, CSS
-- **Core Logic**:
-  - `content.js`: Handles UI injection, DOM observation, and overlay rendering.
-  - `background.js`: Manages API communication with LLM providers.
-  - `popup.html`: Extension settings and configuration.
+- **Script Injection**: Uses `MAIN` world injection via `userScripts` or `scripting` API to hijack `attachShadow`.
+- **Backend Communication**: Index-backoff retry mechanism for resilient API calls.
+- **Frontend**: Vanilla JavaScript with `IntersectionObserver` and `MutationObserver` for state-of-the-art DOM tracking.
 
 ## Project Structure
 
 - `manga-trans-extension/`
-  - `manifest.json`: Extension metadata and permissions.
-  - `content.js`: Main logic for page manipulation and translation triggers.
-  - `background.js`: Background service worker for API calls.
-  - `style.css`: UI styles for the translation toggle and overlays.
-  - `popup.html`: Settings interface.
+  - `manifest.json`: Extension metadata, permissions, and script registration.
+  - `content.js`: Core logic for image detection, UI synchronization, and overlay rendering.
+  - `background.js`: Service worker handling API requests, glossary management, and network rules (Referer spoofing).
+  - `inject.js`: Injected into the page's MAIN world to enable Shadow DOM access.
+  - `popup.html/js`: Settings interface for API configuration and layout preferences.
+  - `icon*.png`: Official extension icons.
 
-## Development and Installation
+## Development & Testing
 
 ### Installation
-1. Open Chrome and navigate to `chrome://extensions/`.
-2. Enable "Developer mode" in the top right corner.
-3. Click "Load unpacked" and select the `manga-trans-extension` folder.
+1. Enable **Developer Mode** in `chrome://extensions/`.
+2. Load the `manga-trans-extension` folder as an unpacked extension.
 
-### Testing
-- Open any manga on ManhuaGui (e.g., `https://www.manhuagui.com/comic/...`).
-- Locate the "Auto-Translate" toggle near the reader controls.
-- Verify that translations persist across page flips but reset on chapter changes.
+### Verification
+- Test on ManhuaGui with and without `ComicRead.js` enabled.
+- Verify that translation bubbles persist across page flips but disappear on F5 refresh.
+- Check the Service Worker console for glossary updates (`[MangaTrans] Glossary updated`).
 
-## Development Conventions
+## Engineering Standards
 
-- **Surgical DOM Access**: Use specific IDs like `#mangaFile` to target the reader image.
-- **Performance**: Minimize LLM calls by caching OCR results or using local OCR for positioning where possible.
-- **Clean UI**: Translation overlays must match the original manga's layout and background to provide a seamless experience.
+- **Shadow DOM Transparency**: Always use the `MAIN` world proxy to ensure visibility of reading mode elements.
+- **Token Efficiency**: Filter out non-story elements early in the prompt. Implement aggressive debouncing on triggers.
+- **Referer Integrity**: Use `declarativeNetRequest` rules to bypass CDN anti-hotlinking protections (403 errors).
+- **Aesthetic Precision**: Maintain the red-dashed border style for translated areas to ensure clarity and user-friendly "scanlation" feel.

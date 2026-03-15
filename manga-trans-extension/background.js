@@ -137,7 +137,8 @@ function parseSafeJSON(str) {
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.type === "TRANSLATE_IMAGE") {
         const tabId = sender.tab.id;
-        chrome.storage.sync.get(['baseUrl', 'apiKey', 'modelName', 'targetLang'], async (result) => {
+        // 补全对 writingMode 的读取
+        chrome.storage.sync.get(['baseUrl', 'apiKey', 'modelName', 'targetLang', 'writingMode'], async (result) => {
             if (!result.apiKey) { sendResponse({ success: false, error: "未配置 API" }); return; }
             try {
                 const data = await callOpenAITranslate(request.imgSrc, result, tabId);

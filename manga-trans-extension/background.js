@@ -1,7 +1,4 @@
-// --- 全局会话状态 ---
-let tabGlossaries = {}; // 按标签页隔离术语表: { tabId: { "原文": "译文" } }
-
-// --- 动态修改 Referer ---
+// --- 动态修改 Referer 以绕过防盗链 ---
 const RULE_ID = 1;
 async function setupRefererRule() {
     const rules = [{
@@ -13,64 +10,54 @@ async function setupRefererRule() {
 }
 
 // --- 注册 MAIN world 脚本以穿透 Shadow DOM ---
-// 使用标准的 scripting API 注入，确保权限使用合规
 async function registerMainWorldScript() {
     try {
         const scripts = await chrome.scripting.getRegisteredContentScripts();
-        if (scripts.some(s => s.id === 'shadow-proxy')) {
-            await chrome.scripting.unregisterContentScripts({ ids: ['shadow-proxy'] });
-        }
-
+        if (scripts.some(s => s.id === 'shadow-proxy')) await chrome.scripting.unregisterContentScripts({ ids: ['shadow-proxy'] });
         await chrome.scripting.registerContentScripts([{
-            id: 'shadow-proxy',
-            world: 'MAIN',
-            matches: ["*://*.manhuagui.com/*", "*://*.mhgui.com/*"],
-            js: ['inject.js'],
-            runAt: 'document_start'
+            id: 'shadow-proxy', world: 'MAIN', matches: ["*://*.manhuagui.com/*", "*://*.mhgui.com/*"],
+            js: ['inject.js'], runAt: 'document_start'
         }]);
-        console.log("[MangaTrans] Shadow proxy registered via scripting API");
-    } catch (err) {
-        console.error("[MangaTrans] Script registration failed:", err);
-    }
+    } catch (err) { console.error("[MangaTrans] Script registration failed:", err); }
 }
 
 chrome.runtime.onInstalled.addListener(() => { setupRefererRule(); registerMainWorldScript(); });
 chrome.runtime.onStartup.addListener(() => { setupRefererRule(); registerMainWorldScript(); });
 
-// 监听标签页重载：仅在“硬重载”时清空该标签页的术语表
+let tabGlossaries = {}; // 按标签页隔离术语表
+
+// 标签页刷新清空术语表
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-    if (changeInfo.status === 'loading' && tab.url && tab.url.includes("manhuagui.com")) {
-        if (!tab.url.includes('#')) {
-            console.log(`[MangaTrans] 标签页 ${tabId} 刷新，清空术语表`);
-            delete tabGlossaries[tabId];
-        }
+    if (changeInfo.status === 'loading' && tab.url && tab.url.includes("manhuagui.com") && !tab.url.includes('#')) {
+        delete tabGlossaries[tabId];
     }
 });
-
-chrome.tabs.onRemoved.addListener((tabId) => {
-    delete tabGlossaries[tabId];
-});
+chrome.tabs.onRemoved.addListener((tabId) => delete tabGlossaries[tabId]);
 
 // --- 翻译逻辑 ---
 async function callOpenAITranslate(imgSrc, config, tabId, retryCount = 0) {
-    const { baseUrl, apiKey, modelName, targetLang } = config;
+    const { baseUrl, apiKey, modelName, targetLang, writingMode } = config;
     const finalUrl = `${baseUrl.replace(/\/$/, '')}/chat/completions`;
     const finalLang = targetLang || "简体中文";
 
-    if (!tabGlossaries[tabId]) tabGlossaries[tabId] = {};
-    const glossary = tabGlossaries[tabId];
+    // 处理排版方式变量
+    let modeText = "自动判断（横排或竖排）";
+    if (writingMode === 'vertical') modeText = "强制竖排";
+    else if (writingMode === 'horizontal') modeText = "强制横排";
 
-    const glossaryContext = Object.entries(glossary)
-        .map(([raw, trans]) => `${raw} -> ${trans}`)
-        .join('\n');
+    if (!tabGlossaries[tabId]) tabGlossaries[tabId] = {};
+    const glossaryContext = Object.entries(tabGlossaries[tabId]).map(([r, t]) => `${r} -> ${t}`).join('\n');
 
     const prompt = `你是一个专业的漫画汉化组助手。
 任务：识别图中所有对话气泡和旁白文字，将其日语翻译成${finalLang}并标注位置。
-坐标规则：使用 [ymin, xmin, ymax, xmax] 格式，范围为 0-1000。
-注意：(0,0) 必须是图像文件的绝对左上角顶点。不要自行裁剪。
-要求：译文请提供平铺的文本，不要包含换行符。
+坐标规则：使用 [ymin, xmin, ymax, xmax] 格式，范围为 0-1000。坐标(0,0)为图像最左上角。排版方式：${modeText}
+要求：
+1. 译文请提供平铺的文本，不要包含换行符。
+2. 对于竖排文本，请确保 box 纵向范围能够至少容纳三个字符。如果译文仅有不足三个的字符，排成一列即可
+3. 遵循过滤规则和 new_terms 的提取规则。
+4. 省略号、破折号等占两个字符的，仅输出一半，如：省略号返回“…”
 
-过滤规则：请务必忽略以下内容：
+过滤规则：请务必忽略以下内容，不要对它们进行翻译或标注：
 1. 画面外的标题、作者名、卷标、章节号。
 2. 页面边缘或角上的页码、日期、出版信息。
 3. 网站水印、App 下载引导、广告文字。
@@ -82,17 +69,20 @@ ${glossaryContext ? `请务必遵循以下已有的翻译对照：\n${glossaryCo
 你必须返回一个 JSON 对象，结构如下：
 {
   "translations": [
-    { "box": [ymin, xmin, ymax, xmax], "text": "译文" }
+    { 
+      "box": [ymin, xmin, ymax, xmax], 
+      "text": "译文"
+    }
   ],
   "new_terms": { "原文": "译文" } 
 }
 注意关于 new_terms 的提取规则：
 1. 仅提取：人名、角色绰号、地名、以及本作品特有的专有名称。
-2. 禁止提取：普通的通用物品名称（如：公路车、反光带、头盔、水壶、咖啡等，就是可以通过这个词在购物网站搜索的那种）。
-3. 仅输出 JSON，不要任何解释文字。`;
+2. 不需要提取：通用商品名，购物网站的检索词那种（如：公路车、反光带、头盔、水壶、咖啡等）。
+不要输出 JSON 以外的文字。`;
 
     try {
-        console.log(`[MangaTrans] [Tab:${tabId}] 请求翻译 (尝试 ${retryCount + 1})...`);
+        console.log(`[MangaTrans] [Tab:${tabId}] 请求翻译 (试 ${retryCount + 1})...`);
         const imgBlob = await fetch(imgSrc).then(r => r.blob());
         const base64Data = await new Promise((resolve) => {
             const reader = new FileReader();
@@ -127,11 +117,7 @@ ${glossaryContext ? `请务必遵循以下已有的翻译对照：\n${glossaryCo
         const content = result.choices[0].message.content;
         const parsed = parseSafeJSON(content);
 
-        if (parsed.new_terms) {
-            Object.assign(glossary, parsed.new_terms);
-            console.log(`[MangaTrans] [Tab:${tabId}] 术语表更新:`, glossary);
-        }
-
+        if (parsed.new_terms) Object.assign(tabGlossaries[tabId], parsed.new_terms);
         return parsed.translations || [];
     } catch (error) {
         if ((error.name === 'TypeError' || error.name === 'AbortError') && retryCount < 2) {

@@ -77,7 +77,9 @@ function injectUI() {
             </div>
         `;
         document.body.appendChild(container);
-        document.getElementById('manga-trans-check').addEventListener('change', (e) => chrome.storage.sync.set({ isAutoTranslate: e.target.checked }));
+        const cb = document.getElementById('manga-trans-check');
+        cb.checked = isAutoTranslate;
+        cb.addEventListener('change', (e) => chrome.storage.sync.set({ isAutoTranslate: e.target.checked }));
     }
 }
 
@@ -128,13 +130,39 @@ function renderOverlay(imgElement, results, userWritingMode) {
         const [ymin, xmin, ymax, xmax] = box;
         const widthPct = (xmax - xmin) / 10;
         const heightPct = (ymax - ymin) / 10;
-        let isVertical = (userWritingMode === 'vertical') || (userWritingMode === 'auto' && heightPct > widthPct * 1.1);
+        const text = item.text || item.translated_text || "";
+
+        // 排版判定：回归基于 box 比例的启发式算法
+        let isVertical = false;
+        if (userWritingMode === 'vertical') {
+            isVertical = true;
+        } else if (userWritingMode === 'horizontal') {
+            isVertical = false;
+        } else {
+            // 自动模式：高度显著大于宽度则视为竖排
+            isVertical = heightPct > widthPct * 1.1;
+        }
+
         const physWidth = (widthPct / 100) * imgElement.clientWidth;
         const physHeight = (heightPct / 100) * imgElement.clientHeight;
         const shortSide = Math.min(physWidth, physHeight);
         let fontSize = Math.max(10, Math.min(22, shortSide * 0.45));
-        const text = item.text || item.translated_text || "";
         if (text.length > 15) fontSize *= 0.85;
+
+        // 竖排逻辑优化：移除 flex，利用原生分列
+        let verticalStyles = '';
+        if (isVertical) {
+            verticalStyles = `
+                writing-mode: vertical-rl; 
+                text-orientation: upright; 
+                display: block; 
+                height: fit-content;
+                max-height: 100%; 
+                width: fit-content;
+                max-width: ${Math.max(physWidth * 1.5, 200)}px;
+                letter-spacing: 1px;
+            `;
+        }
 
         const textBox = document.createElement('div');
         const centerX = xmin / 10 + widthPct / 2;
@@ -143,7 +171,17 @@ function renderOverlay(imgElement, results, userWritingMode) {
         
         const textSpan = document.createElement('span');
         textSpan.innerText = text;
-        textSpan.style.cssText = `background:white; padding:4px 8px; border-radius:6px; box-shadow:0 2px 8px rgba(0,0,0,0.3); font-weight:bold; color:black; font-size:${fontSize}px; line-height:1.2; text-align:center; word-break:break-all; border:2px dashed #ff4d4f; box-sizing:border-box; width:fit-content; height:fit-content; max-width:${Math.max(physWidth * 1.5, 200)}px; display:flex; align-items:center; justify-content:center; white-space:normal; ${isVertical ? 'writing-mode:vertical-rl; text-orientation:upright; height:fit-content;' : ''}`;
+        textSpan.style.cssText = `
+            background: white; padding: 6px 10px; border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.3); font-weight: bold; color: black;
+            font-size: ${fontSize}px; line-height: 1.2; text-align: center; word-break: break-all;
+            border: 2px dashed #ff4d4f; box-sizing: border-box;
+            width: fit-content; height: fit-content;
+            display: flex; align-items: center; justify-content: center;
+            white-space: normal;
+            ${!isVertical ? '' : '/* 竖排时由 verticalStyles 覆盖样式 */'}
+            ${verticalStyles}
+        `;
         
         textBox.appendChild(textSpan);
         container.appendChild(textBox);

@@ -3,7 +3,7 @@
   "name": "智能漫画翻译助手 (MangaTrans)",
   "version": "1.5",
   "description": "基于大模型的智能漫画翻译助手，支持自动翻译、术语一致性及阅读模式适配。",
-  "permissions": ["storage", "activeTab", "scripting", "declarativeNetRequest", "userScripts"],
+  "permissions": ["storage", "activeTab", "scripting", "declarativeNetRequest"],
   "host_permissions": ["*://*.manhuagui.com/*", "*://*.mhgui.com/*", "https://*.hamreus.com/*"],
   "action": {
     "default_popup": "popup.html",

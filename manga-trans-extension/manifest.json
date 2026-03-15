@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "漫画柜智能翻译助手 (ManhuaGui Trans)",
+  "name": "智能漫画翻译助手 (MangaTrans)",
   "version": "1.5",
-  "description": "专为漫画柜设计的智能翻译插件，支持自动翻译和章节状态管理，深度适配 ComicRead 脚本。",
+  "description": "基于大模型的智能漫画翻译助手，支持自动翻译、术语一致性及阅读模式适配。",
   "permissions": ["storage", "activeTab", "scripting", "declarativeNetRequest", "userScripts"],
   "host_permissions": ["*://*.manhuagui.com/*", "*://*.mhgui.com/*", "https://*.hamreus.com/*"],
   "action": {

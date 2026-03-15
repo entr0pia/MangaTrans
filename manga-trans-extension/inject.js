@@ -7,5 +7,5 @@
         }
         return originalAttachShadow.apply(this, arguments);
     };
-    console.log("[ManhuaGui Trans] Shadow DOM Proxy Active");
+    console.log("[MangaTrans] Shadow DOM Proxy Active");
 })();

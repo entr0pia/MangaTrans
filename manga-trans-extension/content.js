@@ -19,11 +19,11 @@ function updateLocalState(enabled) {
     if (checkbox) checkbox.checked = enabled;
     
     if (enabled) {
-        console.log("[ManhuaGui Trans] 翻译已启用，执行扫描...");
+        console.log("[MangaTrans] 翻译已启用，执行扫描...");
         document.querySelectorAll('img[data-has-trans]').forEach(img => img.removeAttribute('data-has-trans'));
         deepScanAndObserve();
     } else {
-        console.log("[ManhuaGui Trans] 翻译已关闭，移除图层");
+        console.log("[MangaTrans] 翻译已关闭，移除图层");
         removeAllOverlays();
     }
 }
@@ -38,7 +38,7 @@ chrome.storage.onChanged.addListener((changes) => {
     // 2. 配置项变更 (排版或语言)
     const isConfigChanged = changes.writingMode || changes.targetLang;
     if (isConfigChanged && isAutoTranslate) {
-        console.log("[ManhuaGui Trans] 检测到配置项变更，正在重新翻译...");
+        console.log("[MangaTrans] 检测到配置项变更，正在重新翻译...");
         removeAllOverlays();
         // 清除标记，强制重新触发翻译
         document.querySelectorAll('img[data-has-trans]').forEach(img => img.removeAttribute('data-has-trans'));

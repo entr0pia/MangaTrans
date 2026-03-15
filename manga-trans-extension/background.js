@@ -22,7 +22,7 @@ async function registerMainWorldScript() {
                 js: [{ file: 'inject.js' }], runAt: 'document_start'
             }]);
         }
-    } catch (err) { console.error("[ManhuaGui Trans] Script registration failed:", err); }
+    } catch (err) { console.error("[MangaTrans] Script registration failed:", err); }
 }
 
 chrome.runtime.onInstalled.addListener(() => { setupRefererRule(); registerMainWorldScript(); });
@@ -33,7 +33,7 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
     if (changeInfo.status === 'loading' && tab.url && tab.url.includes("manhuagui.com")) {
         // 排除掉仅仅是 Hash 变化（SPA翻页）的情况
         if (!tab.url.includes('#')) {
-            console.log(`[ManhuaGui Trans] 标签页 ${tabId} 刷新，清空术语表`);
+            console.log(`[MangaTrans] 标签页 ${tabId} 刷新，清空术语表`);
             delete tabGlossaries[tabId];
         }
     }
@@ -86,7 +86,7 @@ async function callOpenAITranslate(imgSrc, config, tabId, retryCount = 0) {
     3. 仅输出 JSON，不要任何解释文字。`;
 
     try {
-        console.log(`[ManhuaGui Trans] [Tab:${tabId}] 请求翻译 (尝试 ${retryCount + 1})...`);
+        console.log(`[MangaTrans] [Tab:${tabId}] 请求翻译 (尝试 ${retryCount + 1})...`);
         const imgBlob = await fetch(imgSrc).then(r => r.blob());
         const base64Data = await new Promise((resolve) => {
             const reader = new FileReader();
@@ -123,7 +123,7 @@ async function callOpenAITranslate(imgSrc, config, tabId, retryCount = 0) {
 
         if (parsed.new_terms) {
             Object.assign(glossary, parsed.new_terms);
-            console.log(`[ManhuaGui Trans] [Tab:${tabId}] 术语表更新:`, glossary);
+            console.log(`[MangaTrans] [Tab:${tabId}] 术语表更新:`, glossary);
         }
 
         return parsed.translations || [];

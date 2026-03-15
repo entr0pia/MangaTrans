@@ -132,35 +132,30 @@ function renderOverlay(imgElement, results, userWritingMode) {
         const heightPct = (ymax - ymin) / 10;
         const text = item.text || item.translated_text || "";
 
-        // 排版判定：回归基于 box 比例的启发式算法
-        let isVertical = false;
-        if (userWritingMode === 'vertical') {
-            isVertical = true;
-        } else if (userWritingMode === 'horizontal') {
-            isVertical = false;
-        } else {
-            // 自动模式：高度显著大于宽度则视为竖排
-            isVertical = heightPct > widthPct * 1.1;
-        }
-
+        let isVertical = (userWritingMode === 'vertical') || (userWritingMode === 'auto' && heightPct > widthPct * 1.1);
         const physWidth = (widthPct / 100) * imgElement.clientWidth;
         const physHeight = (heightPct / 100) * imgElement.clientHeight;
         const shortSide = Math.min(physWidth, physHeight);
         let fontSize = Math.max(10, Math.min(22, shortSide * 0.45));
         if (text.length > 15) fontSize *= 0.85;
 
-        // 竖排逻辑优化：移除 flex，利用原生分列
+        // 竖排逻辑优化：解决顺序颠倒和短句分列问题
         let verticalStyles = '';
         if (isVertical) {
+            const absoluteMinH = Math.min(text.length, 2) * fontSize * 1.2;
+            const effectiveMaxH = Math.max(physHeight * 1.1, absoluteMinH);
             verticalStyles = `
                 writing-mode: vertical-rl; 
                 text-orientation: upright; 
                 display: block; 
                 height: fit-content;
-                max-height: 100%; 
+                max-height: ${effectiveMaxH}px;
                 width: fit-content;
                 max-width: ${Math.max(physWidth * 1.5, 200)}px;
                 letter-spacing: 1px;
+                line-break: strict;
+                direction: ltr !important; 
+                unicode-bidi: isolate !important;
             `;
         }
 
@@ -174,12 +169,12 @@ function renderOverlay(imgElement, results, userWritingMode) {
         textSpan.style.cssText = `
             background: white; padding: 6px 10px; border-radius: 8px;
             box-shadow: 0 2px 10px rgba(0,0,0,0.3); font-weight: bold; color: black;
-            font-size: ${fontSize}px; line-height: 1.2; text-align: center; word-break: break-all;
+            font-size: ${fontSize}px; line-height: 1.15; text-align: center; word-break: break-all;
             border: 2px dashed #ff4d4f; box-sizing: border-box;
             width: fit-content; height: fit-content;
             display: flex; align-items: center; justify-content: center;
             white-space: normal;
-            ${!isVertical ? '' : '/* 竖排时由 verticalStyles 覆盖样式 */'}
+            ${!isVertical ? '' : 'display: block;'}
             ${verticalStyles}
         `;
         

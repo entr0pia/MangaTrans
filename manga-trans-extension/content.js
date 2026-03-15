@@ -14,17 +14,10 @@ const imageObserver = new IntersectionObserver((entries) => {
 
 // --- 深度穿透重置辅助 ---
 function resetMangaState(root = document) {
-    // 1. 清除所有图片的翻译标记（含 Shadow DOM）
     root.querySelectorAll?.('img[data-has-trans]').forEach(img => img.removeAttribute('data-has-trans'));
-    
-    // 2. 移除所有翻译图层
     root.querySelectorAll?.('.manga-trans-overlay-container').forEach(c => c.remove());
-
-    // 3. 递归穿透 Shadow DOM
     const all = root.querySelectorAll?.('*') || [];
-    all.forEach(el => {
-        if (el.shadowRoot) resetMangaState(el.shadowRoot);
-    });
+    all.forEach(el => { if (el.shadowRoot) resetMangaState(el.shadowRoot); });
 }
 
 // --- 状态同步辅助 ---
@@ -32,22 +25,20 @@ function updateLocalState(enabled) {
     isAutoTranslate = enabled;
     const checkbox = document.getElementById('manga-trans-check');
     if (checkbox) checkbox.checked = enabled;
-    
     if (enabled) {
         console.log("[MangaTrans] 翻译已启用");
         resetMangaState();
         deepScanAndObserve();
     } else {
         console.log("[MangaTrans] 翻译已关闭");
-        removeAllOverlays(); // 全量清理
+        resetMangaState();
     }
 }
 
-// 监听 storage 变化 (Popup 同步)
+// 监听 storage 变化
 chrome.storage.onChanged.addListener((changes) => {
-    if (changes.isAutoTranslate) {
-        updateLocalState(changes.isAutoTranslate.newValue);
-    } else if ((changes.writingMode || changes.targetLang) && isAutoTranslate) {
+    if (changes.isAutoTranslate) updateLocalState(changes.isAutoTranslate.newValue);
+    else if ((changes.writingMode || changes.targetLang) && isAutoTranslate) {
         console.log("[MangaTrans] 配置项变更，重新翻译...");
         resetMangaState();
         deepScanAndObserve();
@@ -93,7 +84,6 @@ function injectUI() {
         `;
         document.body.appendChild(container);
         const cb = document.getElementById('manga-trans-check');
-        cb.checked = isAutoTranslate;
         cb.addEventListener('change', (e) => chrome.storage.sync.set({ isAutoTranslate: e.target.checked }));
     }
 }
@@ -147,7 +137,15 @@ function renderOverlay(imgElement, results, userWritingMode) {
         const heightPct = (ymax - ymin) / 10;
         const text = item.text || item.translated_text || "";
 
-        let isVertical = (userWritingMode === 'vertical') || (userWritingMode === 'auto' && (item.is_vertical !== undefined ? item.is_vertical : heightPct > widthPct * 1.1));
+        // 排版判定：优先使用模型返回的 direction
+        let isVertical = false;
+        if (userWritingMode === 'vertical') isVertical = true;
+        else if (userWritingMode === 'horizontal') isVertical = false;
+        else {
+            if (item.direction) isVertical = (item.direction === 'vertical');
+            else isVertical = heightPct > widthPct * 1.1;
+        }
+
         const physWidth = (widthPct / 100) * imgElement.clientWidth;
         const physHeight = (heightPct / 100) * imgElement.clientHeight;
         const shortSide = Math.min(physWidth, physHeight);
@@ -168,7 +166,7 @@ function renderOverlay(imgElement, results, userWritingMode) {
         
         const textSpan = document.createElement('span');
         textSpan.innerText = text;
-        textSpan.style.cssText = `background:white; padding:6px 10px; border-radius:8px; box-shadow:0 2px 10px rgba(0,0,0,0.3); font-weight:bold; color:black; font-size:${fontSize}px; line-height:1.15; text-align:center; word-break:break-all; border:2px dashed #ff4d4f; box-sizing:border-box; width:fit-content; height:fit-content; display:flex; align-items:center; justify-content:center; white-space:normal; ${!isVertical ? '' : 'display:block;'} ${verticalStyles}`;
+        textSpan.style.cssText = `background: white; padding: 6px 10px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.3); font-weight: bold; color: black; font-size: ${fontSize}px; line-height: 1.15; text-align: center; word-break: break-all; border: 2px dashed #ff4d4f; box-sizing: border-box; width: fit-content; height: fit-content; display: flex; align-items: center; justify-content: center; white-space: normal; ${!isVertical ? '' : 'display:block;'} ${verticalStyles}`;
         
         textBox.appendChild(textSpan);
         container.appendChild(textBox);
@@ -176,20 +174,13 @@ function renderOverlay(imgElement, results, userWritingMode) {
     parent.appendChild(container);
 }
 
-function removeAllOverlays() {
-    resetMangaState();
-}
+function removeAllOverlays() { resetMangaState(); }
 
 async function handleInitialState() {
     const navs = performance.getEntriesByType("navigation");
     const isReload = navs.length > 0 && navs[0].type === "reload";
-    if (isReload) {
-        await chrome.storage.sync.set({ isAutoTranslate: false });
-        updateLocalState(false);
-    } else {
-        const result = await chrome.storage.sync.get(['isAutoTranslate']);
-        updateLocalState(!!result.isAutoTranslate);
-    }
+    if (isReload) { await chrome.storage.sync.set({ isAutoTranslate: false }); updateLocalState(false); }
+    else { const result = await chrome.storage.sync.get(['isAutoTranslate']); updateLocalState(!!result.isAutoTranslate); }
 }
 
 function helper_debounce(fn, delay) {

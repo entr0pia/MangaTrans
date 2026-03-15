@@ -55,7 +55,9 @@ async function callOpenAITranslate(imgSrc, config, tabId, retryCount = 0) {
 1. 译文请提供平铺的文本，不要包含换行符。
 2. 对于竖排文本，请确保 box 纵向范围能够至少容纳三个字符。如果译文仅有不足三个的字符，排成一列即可
 3. 遵循过滤规则和 new_terms 的提取规则。
-4. 省略号、破折号等占两个字符的，仅输出一半，如：省略号返回“…”
+4. 如果翻译成中文标点会占两个字符，则只返回一半，如：省略号返回“…”，破折号返回“—”
+5. 引号始终使用繁体引号：单引号「 」，双引号『 』
+6. direction字段 为vertical 或 horizontal
 
 过滤规则：请务必忽略以下内容，不要对它们进行翻译或标注：
 1. 画面外的标题、作者名、卷标、章节号。
@@ -71,7 +73,8 @@ ${glossaryContext ? `请务必遵循以下已有的翻译对照：\n${glossaryCo
   "translations": [
     { 
       "box": [ymin, xmin, ymax, xmax], 
-      "text": "译文"
+      "text": "译文",
+      "direction": "vertical"
     }
   ],
   "new_terms": { "原文": "译文" } 

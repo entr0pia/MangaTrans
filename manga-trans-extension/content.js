@@ -1,5 +1,6 @@
 // --- 状态管理 ---
 let isAutoTranslate = false; // 内存变量，页面刷新即重置
+let currentCid = null;
 let lastPathname = location.pathname;
 
 // 使用 IntersectionObserver 监听图片进入视口
@@ -61,13 +62,30 @@ chrome.storage.onChanged.addListener((changes) => {
     }
 });
 
+// --- 章节切换检测 (针对原始页面跳转) ---
+function checkChapterChange() {
+    const path = window.location.pathname;
+    const cidMatch = path.match(/\/comic\/\d+\/(\d+)\.html/) || path.match(/\/photo\/(\d+)/);
+    const newCid = cidMatch ? cidMatch[1] : null;
+    
+    if (currentCid && newCid !== currentCid) {
+        console.log("[MangaTrans] 检测到章节切换，同步重置状态");
+        isAutoTranslate = false;
+        document.getElementById('manga-trans-container')?.remove();
+        chrome.storage.sync.set({ isAutoTranslate: false });
+        updateLocalState(false);
+    }
+    currentCid = newCid;
+}
+
 // --- 深度探测逻辑 ---
 function deepScanAndObserve() {
     if (!isAutoTranslate) return;
     function scan(node) {
         if (node.tagName === 'IMG') {
             const rect = node.getBoundingClientRect();
-            if (node.src && (rect.width > 100 || node.naturalWidth > 100)) {
+            // 匹配漫画图片特征：宽度足够大
+            if (node.src && (rect.width > 200 || node.naturalWidth > 200)) {
                 imageObserver.observe(node);
                 if (rect.top < window.innerHeight && rect.bottom > 0) triggerSingleTranslation(node);
             }
@@ -88,7 +106,10 @@ function injectUI() {
         document.getElementById('manga-trans-container')?.remove();
         return;
     }
-    if (document.getElementById('mangaFile') && !document.getElementById('manga-trans-container')) {
+    
+    // 支持漫画柜和 18comic 的容器检测
+    const hasManga = document.getElementById('mangaFile') || document.querySelector('.read-container') || document.querySelector('.comic-view');
+    if (hasManga && !document.getElementById('manga-trans-container')) {
         const container = document.createElement('div');
         container.id = 'manga-trans-container';
         container.style.cssText = `position:fixed; top:80px; right:20px; z-index:2147483647;`;
@@ -100,6 +121,7 @@ function injectUI() {
         `;
         document.body.appendChild(container);
         const cb = document.getElementById('manga-trans-check');
+        cb.checked = isAutoTranslate;
         cb.addEventListener('change', (e) => chrome.storage.sync.set({ isAutoTranslate: e.target.checked }));
     }
 }
@@ -160,13 +182,11 @@ function renderOverlay(imgElement, results, userWritingMode) {
         let fontSize = Math.max(10, Math.min(22, shortSide * 0.45));
         if (text.length > 15) fontSize *= 0.85;
 
-        let extraStyles = '';
+        let verticalStyles = '';
         if (isVertical) {
             const absoluteMinH = Math.min(text.length, 2) * fontSize * 1.2;
             const effectiveMaxH = Math.max(physHeight * 1.1, absoluteMinH);
-            extraStyles = `writing-mode:vertical-rl; text-orientation:upright; display:block; height:fit-content; max-height:${effectiveMaxH}px; width:fit-content; max-width:${Math.max(physWidth * 1.5, 200)}px; letter-spacing:1px; line-break:strict; direction:ltr !important; unicode-bidi:isolate !important;`;
-        } else {
-            extraStyles = `writing-mode:horizontal-tb; direction:ltr !important; display:flex; align-items:center; justify-content:center; text-align:center; width:fit-content; height:fit-content; max-width:${Math.max(physWidth * 1.5, 200)}px;`;
+            verticalStyles = `writing-mode:vertical-rl; text-orientation:upright; display:block; height:fit-content; max-height:${effectiveMaxH}px; width:fit-content; max-width:${Math.max(physWidth * 1.5, 200)}px; letter-spacing:1px; line-break:strict; direction:ltr !important; unicode-bidi:isolate !important;`;
         }
 
         const textBox = document.createElement('div');
@@ -176,21 +196,12 @@ function renderOverlay(imgElement, results, userWritingMode) {
         
         const textSpan = document.createElement('span');
         textSpan.innerText = text;
-        textSpan.style.cssText = `background: white; padding: 6px 10px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.3); font-weight: bold; color: black; font-size: ${fontSize}px; line-height: 1.15; word-break: break-all; border: 2px dashed #ff4d4f; box-sizing: border-box; white-space: normal; ${extraStyles}`;
+        textSpan.style.cssText = `background: white; padding: 6px 10px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.3); font-weight: bold; color: black; font-size: ${fontSize}px; line-height: 1.15; text-align: center; word-break: break-all; border: 2px dashed #ff4d4f; box-sizing: border-box; width: fit-content; height: fit-content; display: flex; align-items: center; justify-content: center; white-space: normal; ${!isVertical ? '' : 'display:block;'} ${verticalStyles}`;
         
         textBox.appendChild(textSpan);
         container.appendChild(textBox);
     });
     parent.appendChild(container);
-}
-
-function removeAllOverlays() { resetMangaState(); }
-
-async function handleInitialState() {
-    const navs = performance.getEntriesByType("navigation");
-    const isReload = navs.length > 0 && navs[0].type === "reload";
-    if (isReload) { await chrome.storage.sync.set({ isAutoTranslate: false }); updateLocalState(false); }
-    else { const result = await chrome.storage.sync.get(['isAutoTranslate']); updateLocalState(!!result.isAutoTranslate); }
 }
 
 function helper_debounce(fn, delay) {
@@ -200,10 +211,21 @@ function helper_debounce(fn, delay) {
 
 function setupObservers() {
     window.addEventListener('hashchange', () => { if (isAutoTranslate) { resetMangaState(); setTimeout(deepScanAndObserve, 500); } });
-    const domObserver = new MutationObserver(helper_debounce(() => { injectUI(); if (isAutoTranslate) deepScanAndObserve(); }, 200));
+    const domObserver = new MutationObserver(helper_debounce(() => {
+        checkChapterChange();
+        injectUI();
+        if (isAutoTranslate) deepScanAndObserve();
+    }, 200));
     domObserver.observe(document.documentElement, { childList: true, subtree: true });
+}
+
+async function handleInitialState() {
+    const navs = performance.getEntriesByType("navigation");
+    const isReload = navs.length > 0 && navs[0].type === "reload";
+    if (isReload) { await chrome.storage.sync.set({ isAutoTranslate: false }); updateLocalState(false); }
+    else { const result = await chrome.storage.sync.get(['isAutoTranslate']); updateLocalState(!!result.isAutoTranslate); }
 }
 
 handleInitialState();
 setupObservers();
-setInterval(() => { injectUI(); if (isAutoTranslate) deepScanAndObserve(); }, 500);
+setInterval(() => { checkChapterChange(); injectUI(); if (isAutoTranslate) deepScanAndObserve(); }, 500);

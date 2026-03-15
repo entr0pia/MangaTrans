@@ -1,15 +1,28 @@
 // --- 全局会话状态 ---
-let tabGlossaries = {}; // 按标签页隔离术语表: { tabId: { "原文": "译文" } }
+let tabGlossaries = {}; // 按标签页隔离术语表
 
-// --- 动态修改 Referer ---
+// --- 动态修改 Referer 以绕过防盗链 ---
 const RULE_ID = 1;
+const DOMAINS = [
+    "*://*.manhuagui.com/*", "*://*.mhgui.com/*",
+    "*://*.18comic.vip/*", "*://*.18comic.org/*",
+    "*://*.jm-comic.me/*", "*://*.jm-comic.org/*"
+];
+
 async function setupRefererRule() {
-    const rules = [{
-        id: RULE_ID, priority: 1,
-        action: { type: "modifyHeaders", requestHeaders: [{ header: "referer", operation: "set", value: "https://www.manhuagui.com/" }] },
-        condition: { urlFilter: "|https://*.hamreus.com/*", resourceTypes: ["xmlhttprequest"] }
-    }];
-    await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds: [RULE_ID], addRules: rules });
+    const rules = [
+        {
+            id: RULE_ID, priority: 1,
+            action: { type: "modifyHeaders", requestHeaders: [{ header: "referer", operation: "set", value: "https://www.manhuagui.com/" }] },
+            condition: { urlFilter: "|https://*.hamreus.com/*", resourceTypes: ["xmlhttprequest"] }
+        },
+        {
+            id: 2, priority: 1,
+            action: { type: "modifyHeaders", requestHeaders: [{ header: "referer", operation: "set", value: "https://18comic.vip/" }] },
+            condition: { urlFilter: "|*://*.cdnbocc.com/*", resourceTypes: ["xmlhttprequest"] } // 18comic 常用 CDN
+        }
+    ];
+    await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds: [RULE_ID, 2], addRules: rules });
 }
 
 // --- 注册 MAIN world 脚本以穿透 Shadow DOM ---
@@ -18,37 +31,42 @@ async function registerMainWorldScript() {
         const scripts = await chrome.scripting.getRegisteredContentScripts();
         if (scripts.some(s => s.id === 'shadow-proxy')) await chrome.scripting.unregisterContentScripts({ ids: ['shadow-proxy'] });
         await chrome.scripting.registerContentScripts([{
-            id: 'shadow-proxy', world: 'MAIN', matches: ["*://*.manhuagui.com/*", "*://*.mhgui.com/*"],
+            id: 'shadow-proxy', world: 'MAIN',
+            matches: [
+                "*://*.manhuagui.com/*", "*://*.mhgui.com/*",
+                "*://*.18comic.vip/*", "*://*.18comic.org/*",
+                "*://*.jm-comic.me/*", "*://*.jm-comic.org/*"
+            ],
             js: ['inject.js'], runAt: 'document_start'
         }]);
+        console.log("[MangaTrans] Shadow proxy registered via scripting API");
     } catch (err) { console.error("[MangaTrans] Script registration failed:", err); }
 }
 
 chrome.runtime.onInstalled.addListener(() => { setupRefererRule(); registerMainWorldScript(); });
 chrome.runtime.onStartup.addListener(() => { setupRefererRule(); registerMainWorldScript(); });
 
-// 监听标签页重载：仅在“硬重载”时清空该标签页的术语表并重置开关
+// 监听标签页重载：重置开关与术语表
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-    if (changeInfo.status === 'loading' && tab.url && tab.url.includes("manhuagui.com")) {
-        // 排除掉仅仅是 Hash 变化（SPA翻页）的情况
-        if (!tab.url.includes('#')) {
-            console.log(`[MangaTrans] 标签页 ${tabId} 刷新，清空术语表并重置开关`);
+    if (changeInfo.status === 'loading' && tab.url) {
+        const isMangaSite = tab.url.includes("manhuagui.com") || tab.url.includes("18comic") || tab.url.includes("jm-comic");
+        if (isMangaSite && !tab.url.includes('#')) {
+            console.log(`[MangaTrans] 标签页 ${tabId} 刷新，重置状态`);
             delete tabGlossaries[tabId];
             chrome.storage.sync.set({ isAutoTranslate: false });
         }
     }
 });
 
-// 核心：使用 webNavigation 监听 SPA (History API) 导致的路径变化
+// 使用 webNavigation 监听 SPA 路径变化
 chrome.webNavigation.onHistoryStateUpdated.addListener((details) => {
-    if (details.url && details.url.includes("manhuagui.com")) {
-        console.log(`[MangaTrans] 检测到 History 状态变更: ${details.url}`);
-        // 通知该标签页执行路径变更检查
+    const isMangaSite = details.url.includes("manhuagui.com") || details.url.includes("18comic") || details.url.includes("jm-comic");
+    if (isMangaSite) {
         chrome.tabs.sendMessage(details.tabId, { type: "URL_CHANGED", url: details.url }).catch(() => { });
     }
 });
 
-chrome.tabs.onRemoved.addListener((tabId) => { delete tabGlossaries[tabId]; });
+chrome.tabs.onRemoved.addListener((tabId) => delete tabGlossaries[tabId]);
 
 // --- 翻译逻辑 ---
 async function callOpenAITranslate(imgSrc, config, tabId, retryCount = 0) {
@@ -69,7 +87,7 @@ async function callOpenAITranslate(imgSrc, config, tabId, retryCount = 0) {
 坐标规则：使用 [ymin, xmin, ymax, xmax] 格式，范围为 0-1000。坐标(0,0)为图像最左上角。排版方式：${modeText}
 要求：
 1. 译文请提供平铺的文本，不要包含换行符。
-2. 对于竖排文本，请确保 box 高度能够至少容纳 3.6 个全角字符。如果译文长度(含标点)<=3，排成一列即可，横排同理
+2. 对于竖排文本，请确保 box 高度能够至少容纳 3.8 个全角字符。如果译文长度(含标点)<=3，排成一列即可，横排同理
 3. 如果翻译成中文标点会占两个字符，则只返回一半，如：省略号返回“…”，破折号返回“—”
 4. 引号始终使用繁体引号：单引号「 」，双引号『 』
 5. direction字段 为vertical 或 horizontal

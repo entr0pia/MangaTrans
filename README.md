@@ -35,8 +35,17 @@
 3. 开启右上角的 **“开发者模式”**。
 4. 点击 **“加载已解压的扩展程序”**，选择 `manga-trans-extension` 目录。
 
-### 2. 配置 API
-点击扩展图标打开弹出面板进行配置：
+### 2. 授予用户脚本权限 (必读)
+由于本项目需要穿透封闭式 Shadow DOM 以适配 **ComicRead** 脚本，您必须手动开启权限：
+1. 在 `chrome://extensions/` 页面中找到 **智能漫画翻译助手**。
+2. 点击 **“详细信息”**。
+3. 找到 **“允许使用用户脚本 (Allow User Scripts)”** 选项并将其打开。
+
+### 3. 配置 API
+点击扩展图标打开弹出面板：
+
+<img src="imgs/PixPin_26-03-15_11-11-38.jpg" width="300" alt="设置界面">
+
 - **Base URL**: 填入 OpenAI 兼容的 API 地址（如 `https://generativelanguage.googleapis.com/v1beta/openai/` 或各类中转地址）。
 - **API Key**: 您的模型密钥。
 - **Model Name**:如 `gemini-3.1-flash-lite-preview`。

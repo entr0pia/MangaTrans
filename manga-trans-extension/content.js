@@ -12,29 +12,44 @@ const imageObserver = new IntersectionObserver((entries) => {
     });
 }, { threshold: 0.1 });
 
+// --- 深度穿透重置辅助 ---
+function resetMangaState(root = document) {
+    // 1. 清除所有图片的翻译标记（含 Shadow DOM）
+    root.querySelectorAll?.('img[data-has-trans]').forEach(img => img.removeAttribute('data-has-trans'));
+    
+    // 2. 移除所有翻译图层
+    root.querySelectorAll?.('.manga-trans-overlay-container').forEach(c => c.remove());
+
+    // 3. 递归穿透 Shadow DOM
+    const all = root.querySelectorAll?.('*') || [];
+    all.forEach(el => {
+        if (el.shadowRoot) resetMangaState(el.shadowRoot);
+    });
+}
+
 // --- 状态同步辅助 ---
 function updateLocalState(enabled) {
     isAutoTranslate = enabled;
     const checkbox = document.getElementById('manga-trans-check');
     if (checkbox) checkbox.checked = enabled;
+    
     if (enabled) {
-        console.log("[MangaTrans] 翻译已启用，执行扫描...");
-        document.querySelectorAll('img[data-has-trans]').forEach(img => img.removeAttribute('data-has-trans'));
+        console.log("[MangaTrans] 翻译已启用");
+        resetMangaState();
         deepScanAndObserve();
     } else {
-        console.log("[MangaTrans] 翻译已关闭，移除图层");
-        removeAllOverlays();
+        console.log("[MangaTrans] 翻译已关闭");
+        removeAllOverlays(); // 全量清理
     }
 }
 
-// 监听 storage 变化
+// 监听 storage 变化 (Popup 同步)
 chrome.storage.onChanged.addListener((changes) => {
-    if (changes.isAutoTranslate) updateLocalState(changes.isAutoTranslate.newValue);
-    const isConfigChanged = changes.writingMode || changes.targetLang;
-    if (isConfigChanged && isAutoTranslate) {
+    if (changes.isAutoTranslate) {
+        updateLocalState(changes.isAutoTranslate.newValue);
+    } else if ((changes.writingMode || changes.targetLang) && isAutoTranslate) {
         console.log("[MangaTrans] 配置项变更，重新翻译...");
-        removeAllOverlays();
-        document.querySelectorAll('img[data-has-trans]').forEach(img => img.removeAttribute('data-has-trans'));
+        resetMangaState();
         deepScanAndObserve();
     }
 });
@@ -132,31 +147,18 @@ function renderOverlay(imgElement, results, userWritingMode) {
         const heightPct = (ymax - ymin) / 10;
         const text = item.text || item.translated_text || "";
 
-        let isVertical = (userWritingMode === 'vertical') || (userWritingMode === 'auto' && heightPct > widthPct * 1.1);
+        let isVertical = (userWritingMode === 'vertical') || (userWritingMode === 'auto' && (item.is_vertical !== undefined ? item.is_vertical : heightPct > widthPct * 1.1));
         const physWidth = (widthPct / 100) * imgElement.clientWidth;
         const physHeight = (heightPct / 100) * imgElement.clientHeight;
         const shortSide = Math.min(physWidth, physHeight);
         let fontSize = Math.max(10, Math.min(22, shortSide * 0.45));
         if (text.length > 15) fontSize *= 0.85;
 
-        // 竖排逻辑优化：解决顺序颠倒和短句分列问题
         let verticalStyles = '';
         if (isVertical) {
             const absoluteMinH = Math.min(text.length, 2) * fontSize * 1.2;
             const effectiveMaxH = Math.max(physHeight * 1.1, absoluteMinH);
-            verticalStyles = `
-                writing-mode: vertical-rl; 
-                text-orientation: upright; 
-                display: block; 
-                height: fit-content;
-                max-height: ${effectiveMaxH}px;
-                width: fit-content;
-                max-width: ${Math.max(physWidth * 1.5, 200)}px;
-                letter-spacing: 1px;
-                line-break: strict;
-                direction: ltr !important; 
-                unicode-bidi: isolate !important;
-            `;
+            verticalStyles = `writing-mode:vertical-rl; text-orientation:upright; display:block; height:fit-content; max-height:${effectiveMaxH}px; width:fit-content; max-width:${Math.max(physWidth * 1.5, 200)}px; letter-spacing:1px; line-break:strict; direction:ltr !important; unicode-bidi:isolate !important;`;
         }
 
         const textBox = document.createElement('div');
@@ -166,17 +168,7 @@ function renderOverlay(imgElement, results, userWritingMode) {
         
         const textSpan = document.createElement('span');
         textSpan.innerText = text;
-        textSpan.style.cssText = `
-            background: white; padding: 6px 10px; border-radius: 8px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.3); font-weight: bold; color: black;
-            font-size: ${fontSize}px; line-height: 1.15; text-align: center; word-break: break-all;
-            border: 2px dashed #ff4d4f; box-sizing: border-box;
-            width: fit-content; height: fit-content;
-            display: flex; align-items: center; justify-content: center;
-            white-space: normal;
-            ${!isVertical ? '' : 'display: block;'}
-            ${verticalStyles}
-        `;
+        textSpan.style.cssText = `background:white; padding:6px 10px; border-radius:8px; box-shadow:0 2px 10px rgba(0,0,0,0.3); font-weight:bold; color:black; font-size:${fontSize}px; line-height:1.15; text-align:center; word-break:break-all; border:2px dashed #ff4d4f; box-sizing:border-box; width:fit-content; height:fit-content; display:flex; align-items:center; justify-content:center; white-space:normal; ${!isVertical ? '' : 'display:block;'} ${verticalStyles}`;
         
         textBox.appendChild(textSpan);
         container.appendChild(textBox);
@@ -185,17 +177,7 @@ function renderOverlay(imgElement, results, userWritingMode) {
 }
 
 function removeAllOverlays() {
-    document.querySelectorAll('.manga-trans-overlay-container').forEach(el => el.remove());
-    function clearShadow(root) {
-        root.querySelectorAll?.('*').forEach(el => {
-            if (el.shadowRoot) {
-                el.shadowRoot.querySelectorAll('.manga-trans-overlay-container').forEach(c => c.remove());
-                clearShadow(el.shadowRoot);
-            }
-        });
-    }
-    clearShadow(document);
-    document.querySelectorAll('img[data-has-trans]').forEach(img => img.removeAttribute('data-has-trans'));
+    resetMangaState();
 }
 
 async function handleInitialState() {
@@ -216,7 +198,7 @@ function helper_debounce(fn, delay) {
 }
 
 function setupObservers() {
-    window.addEventListener('hashchange', () => { if (isAutoTranslate) { removeAllOverlays(); setTimeout(deepScanAndObserve, 500); } });
+    window.addEventListener('hashchange', () => { if (isAutoTranslate) { resetMangaState(); setTimeout(deepScanAndObserve, 500); } });
     const domObserver = new MutationObserver(helper_debounce(() => { injectUI(); if (isAutoTranslate) deepScanAndObserve(); }, 200));
     domObserver.observe(document.documentElement, { childList: true, subtree: true });
 }

@@ -84,7 +84,7 @@ async function callOpenAITranslate(imgSrc, config, tabId, retryCount = 0) {
 
     const prompt = `你是一个专业的漫画汉化组助手。
 任务：识别图中所有对话气泡和旁白文字，结合画面内容，其翻译成${finalLang}并标注位置。
-坐标规则：使用 [ymin, xmin, ymax, xmax] 格式，范围为 0-1000。坐标(0,0)为图像最左上角，使用完整的图像文件，坐标不能忽视四周的留白。
+坐标规则：使用 [ymin, xmin, ymax, xmax] 格式，范围为 0-1000。坐标(0,0)为图像最左上角，使用完整的图像文件，坐标不能忽视四周的留白。适当避让人脸。
 排版方式：${modeText}
 要求：
 1. 译文请提供平铺的文本，不要包含换行符。

@@ -1,4 +1,7 @@
-// --- 动态修改 Referer 以绕过防盗链 ---
+// --- 全局会话状态 ---
+let tabGlossaries = {}; // 按标签页隔离术语表: { tabId: { "原文": "译文" } }
+
+// --- 动态修改 Referer ---
 const RULE_ID = 1;
 async function setupRefererRule() {
     const rules = [{
@@ -24,15 +27,28 @@ async function registerMainWorldScript() {
 chrome.runtime.onInstalled.addListener(() => { setupRefererRule(); registerMainWorldScript(); });
 chrome.runtime.onStartup.addListener(() => { setupRefererRule(); registerMainWorldScript(); });
 
-let tabGlossaries = {}; // 按标签页隔离术语表
-
-// 标签页刷新清空术语表
+// 监听标签页重载：仅在“硬重载”时清空该标签页的术语表并重置开关
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-    if (changeInfo.status === 'loading' && tab.url && tab.url.includes("manhuagui.com") && !tab.url.includes('#')) {
-        delete tabGlossaries[tabId];
+    if (changeInfo.status === 'loading' && tab.url && tab.url.includes("manhuagui.com")) {
+        // 排除掉仅仅是 Hash 变化（SPA翻页）的情况
+        if (!tab.url.includes('#')) {
+            console.log(`[MangaTrans] 标签页 ${tabId} 刷新，清空术语表并重置开关`);
+            delete tabGlossaries[tabId];
+            chrome.storage.sync.set({ isAutoTranslate: false });
+        }
     }
 });
-chrome.tabs.onRemoved.addListener((tabId) => delete tabGlossaries[tabId]);
+
+// 核心：使用 webNavigation 监听 SPA (History API) 导致的路径变化
+chrome.webNavigation.onHistoryStateUpdated.addListener((details) => {
+    if (details.url && details.url.includes("manhuagui.com")) {
+        console.log(`[MangaTrans] 检测到 History 状态变更: ${details.url}`);
+        // 通知该标签页执行路径变更检查
+        chrome.tabs.sendMessage(details.tabId, { type: "URL_CHANGED", url: details.url }).catch(() => { });
+    }
+});
+
+chrome.tabs.onRemoved.addListener((tabId) => { delete tabGlossaries[tabId]; });
 
 // --- 翻译逻辑 ---
 async function callOpenAITranslate(imgSrc, config, tabId, retryCount = 0) {
@@ -41,7 +57,7 @@ async function callOpenAITranslate(imgSrc, config, tabId, retryCount = 0) {
     const finalLang = targetLang || "简体中文";
 
     // 处理排版方式变量
-    let modeText = "自动判断（横排或竖排）";
+    let modeText = "自动判断（根据原文横排或竖排）";
     if (writingMode === 'vertical') modeText = "强制竖排";
     else if (writingMode === 'horizontal') modeText = "强制横排";
 
@@ -86,17 +102,12 @@ ${glossaryContext ? `请务必遵循以下已有的翻译对照：\n${glossaryCo
 不要输出 JSON 以外的文字。`;
 
     try {
-        console.log(`[MangaTrans] [Tab:${tabId}] 请求翻译 (试 ${retryCount + 1})...`);
         const imgBlob = await fetch(imgSrc).then(r => r.blob());
         const base64Data = await new Promise((resolve) => {
             const reader = new FileReader();
             reader.onloadend = () => resolve(reader.result);
             reader.readAsDataURL(imgBlob);
         });
-
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 35000);
-
         const response = await fetch(finalUrl, {
             method: "POST",
             headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` },
@@ -104,30 +115,16 @@ ${glossaryContext ? `请务必遵循以下已有的翻译对照：\n${glossaryCo
                 model: modelName || "gpt-4o-mini",
                 messages: [{ role: "user", content: [{ type: "text", text: prompt }, { type: "image_url", image_url: { url: base64Data } }] }],
                 temperature: 0
-            }),
-            signal: controller.signal
+            })
         });
-        clearTimeout(timeoutId);
-
-        if (!response.ok) {
-            if ((response.status === 429 || response.status >= 500) && retryCount < 2) {
-                await new Promise(r => setTimeout(r, 2000));
-                return callOpenAITranslate(imgSrc, config, tabId, retryCount + 1);
-            }
-            throw new Error(`HTTP ${response.status}`);
-        }
-
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const result = await response.json();
         const content = result.choices[0].message.content;
         const parsed = parseSafeJSON(content);
-
         if (parsed.new_terms) Object.assign(tabGlossaries[tabId], parsed.new_terms);
         return parsed.translations || [];
     } catch (error) {
-        if ((error.name === 'TypeError' || error.name === 'AbortError') && retryCount < 2) {
-            await new Promise(r => setTimeout(r, 1500));
-            return callOpenAITranslate(imgSrc, config, tabId, retryCount + 1);
-        }
+        if (retryCount < 2) return callOpenAITranslate(imgSrc, config, tabId, retryCount + 1);
         throw error;
     }
 }
@@ -141,7 +138,6 @@ function parseSafeJSON(str) {
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.type === "TRANSLATE_IMAGE") {
         const tabId = sender.tab.id;
-        // 补全对 writingMode 的读取
         chrome.storage.sync.get(['baseUrl', 'apiKey', 'modelName', 'targetLang', 'writingMode'], async (result) => {
             if (!result.apiKey) { sendResponse({ success: false, error: "未配置 API" }); return; }
             try {

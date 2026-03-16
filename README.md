@@ -2,6 +2,8 @@
 
 一个基于多模态大模型（OpenAI 兼容接口）的 Chrome 浏览器扩展，实现网页漫画的即时识别、翻译与嵌入式渲染。
 
+[**点击前往 Chrome 应用商店安装**](https://chromewebstore.google.com/detail/%E6%99%BA%E8%83%BD%E6%BC%AB%E7%94%BB%E7%BF%BB%E8%AF%91%E5%8A%A9%E6%89%8B-mangatrans/leakjfklokioebbhlbdkllojkohblahn)
+
 
 ![演示图 1](imgs/PixPin_26-03-14_23-56-49.jpg)
 

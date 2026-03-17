@@ -70,7 +70,7 @@ chrome.tabs.onRemoved.addListener((tabId) => delete tabGlossaries[tabId]);
 
 // --- 翻译逻辑 ---
 async function callOpenAITranslate(imgSrc, config, tabId, retryCount = 0) {
-    const { baseUrl, apiKey, modelName, targetLang, writingMode } = config;
+    const { baseUrl, apiKey, modelName, targetLang, writingMode, reasoningEffort } = config;
     const finalUrl = `${baseUrl.replace(/\/$/, '')}/chat/completions`;
     const finalLang = targetLang || "简体中文";
 
@@ -133,9 +133,12 @@ ${glossaryContext ? `请务必遵循以下已有的翻译对照：\n${glossaryCo
             body: JSON.stringify({
                 model: modelName || "gpt-4o-mini",
                 messages: [{ role: "user", content: [{ type: "text", text: prompt }, { type: "image_url", image_url: { url: base64Data } }] }],
-                temperature: 0
-            })
+                temperature: 0,
+                ...(reasoningEffort && { reasoning_effort: reasoningEffort })
+            }),
+            signal: controller.signal
         });
+
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const result = await response.json();
         const content = result.choices[0].message.content;
@@ -157,13 +160,16 @@ function parseSafeJSON(str) {
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.type === "TRANSLATE_IMAGE") {
         const tabId = sender.tab.id;
-        chrome.storage.sync.get(['baseUrl', 'apiKey', 'modelName', 'targetLang', 'writingMode'], async (result) => {
+        chrome.storage.sync.get(['baseUrl', 'apiKey', 'modelName', 'targetLang', 'writingMode', 'reasoningEffort'], (result) => {
             if (!result.apiKey) { sendResponse({ success: false, error: "未配置 API" }); return; }
-            try {
-                const data = await callOpenAITranslate(request.imgSrc, result, tabId);
-                sendResponse({ success: true, data: data });
-            } catch (err) { sendResponse({ success: false, error: err.message }); }
+            (async () => {
+                try {
+                    const data = await callOpenAITranslate(request.imgSrc, result, tabId);
+                    sendResponse({ success: true, data: data });
+                } catch (err) { sendResponse({ success: false, error: err.message }); }
+            })();
         });
         return true; 
     }
 });
+

@@ -54,11 +54,20 @@ chrome.runtime.onMessage.addListener((request) => {
 
 // 监听 storage 变化
 chrome.storage.onChanged.addListener((changes) => {
-    if (changes.isAutoTranslate) updateLocalState(changes.isAutoTranslate.newValue);
-    else if ((changes.writingMode || changes.targetLang) && isAutoTranslate) {
-        console.log("[MangaTrans] 配置变更，重译...");
-        resetMangaState();
-        deepScanAndObserve();
+    if (changes.isAutoTranslate) {
+        updateLocalState(changes.isAutoTranslate.newValue);
+    } else if (isAutoTranslate) {
+        // 检查是否有任何配置项发生了变化
+        const hasConfigChanged = [
+            'writingMode', 'targetLang', 'baseUrl', 
+            'apiKey', 'modelName', 'reasoningEffort'
+        ].some(key => changes[key]);
+
+        if (hasConfigChanged) {
+            console.log("[MangaTrans] 配置变更，正在重新翻译...");
+            resetMangaState();
+            deepScanAndObserve();
+        }
     }
 });
 

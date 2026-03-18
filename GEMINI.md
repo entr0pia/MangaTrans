@@ -6,7 +6,7 @@ While highly generalizable, it currently features deep, specific adaptations for
 
 ## Key Features
 
-- **🚀 Reading Mode Mastery**: Deeply integrates with the `ComicRead.js` userscript. It can pierce through closed Shadow DOMs to detect and translate manga images in enhanced reading or scroll modes.
+- **🚀 Reading Mode Mastery**: Deeply integrates with the `ComicRead.js` (@local/ComicRead.js) serscript. It can pierce through closed Shadow DOMs to detect and translate manga images in enhanced reading or scroll modes.
 - **🤖 Intelligent Translation Flow**:
   - **OpenAI Compatibility**: Supports any OpenAI-compatible endpoint (e.g., Gemini 1.5, GPT-4o, DeepSeek).
   - **Terminology Consistency**: Maintains a per-tab in-memory glossary to ensure character names and locations are translated consistently across pages.

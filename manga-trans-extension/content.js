@@ -205,7 +205,11 @@ function renderOverlay(imgElement, results, userWritingMode) {
         const [ymin, xmin, ymax, xmax] = box;
         const widthPct = (xmax - xmin) / 10;
         const heightPct = (ymax - ymin) / 10;
-        const text = item.text || item.translated_text || "";
+        
+        // 字符预处理：将双宽省略号和破折号缩减为单宽，节省垂直空间
+        let text = (item.text || item.translated_text || "")
+            .replace(/……/g, '…')
+            .replace(/——/g, '—');
 
         let isVertical = (userWritingMode === 'vertical') || (userWritingMode === 'auto' && (item.direction ? item.direction === 'vertical' : heightPct > widthPct * 1.1));
         const physWidth = (widthPct / 100) * imgElement.clientWidth;
@@ -216,11 +220,12 @@ function renderOverlay(imgElement, results, userWritingMode) {
 
         let extraStyles = '';
         if (isVertical) {
-            const absoluteMinH = Math.min(text.length, 2) * fontSize * 1.2;
-            const effectiveMaxH = Math.max(physHeight * 1.1, absoluteMinH);
-            extraStyles = `writing-mode:vertical-rl; text-orientation:upright; display:block; height:fit-content; max-height:${effectiveMaxH}px; width:fit-content; max-width:${Math.max(physWidth * 1.5, 200)}px; letter-spacing:1px; line-break:strict; direction:ltr !important; unicode-bidi:isolate !important;`;
+            // 竖排优化：增加行高，允许稍微超出原框以容纳标点，移除 upright 确保标点旋转
+            const absoluteMinH = Math.min(text.length, 3) * fontSize * 1.2;
+            const effectiveMaxH = Math.max(physHeight * 1.2, absoluteMinH);
+            extraStyles = `writing-mode:vertical-rl; display:block; height:fit-content; max-height:${effectiveMaxH}px; width:fit-content; max-width:${Math.max(physWidth * 1.5, 200)}px; letter-spacing:1px; line-break:anywhere; direction:ltr !important; unicode-bidi:isolate !important; padding: 4px 6px;`;
         } else {
-            extraStyles = `writing-mode:horizontal-tb; direction:ltr !important; unicode-bidi:isolate !important; display:inline-block; text-align:center; width:fit-content; height:fit-content; max-width:${Math.max(physWidth * 1.5, 200)}px;`;
+            extraStyles = `writing-mode:horizontal-tb; direction:ltr !important; unicode-bidi:isolate !important; display:inline-block; text-align:center; width:fit-content; height:fit-content; max-width:${Math.max(physWidth * 1.5, 200)}px; padding: 6px 10px;`;
         }
 
         const textBox = document.createElement('div');
@@ -230,7 +235,7 @@ function renderOverlay(imgElement, results, userWritingMode) {
         
         const textSpan = document.createElement('span');
         textSpan.innerText = text;
-        textSpan.style.cssText = `background: white; padding: 6px 10px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.3); font-weight: bold; color: black; font-size: ${fontSize}px; line-height: 1.15; word-break: break-all; border: 2px dashed #ff4d4f; box-sizing: border-box; white-space: normal; ${extraStyles}`;
+        textSpan.style.cssText = `background: white; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.3); font-weight: bold; color: black; font-size: ${fontSize}px; line-height: 1.3; word-break: break-all; border: 2px dashed #ff4d4f; box-sizing: border-box; white-space: normal; ${extraStyles}`;
         
         textBox.appendChild(textSpan);
         container.appendChild(textBox);

@@ -122,19 +122,48 @@ function injectUI() {
 
 async function triggerSingleTranslation(img) {
     if (!isAutoTranslate || img.hasAttribute('data-has-trans')) return;
+    
+    // 基础环境检查
+    if (typeof chrome === "undefined" || !chrome.runtime || !chrome.runtime.id) {
+        console.warn("[MangaTrans] 扩展环境已失效");
+        return;
+    }
+
     img.setAttribute('data-has-trans', 'loading');
     showLoading();
-    chrome.storage.sync.get(['writingMode', 'targetLang'], (prefs) => {
-        chrome.runtime.sendMessage({ type: "TRANSLATE_IMAGE", imgSrc: img.src }, (response) => {
-            hideLoading();
-            if (response && response.success) {
-                renderOverlay(img, response.data, prefs.writingMode || 'auto');
-                img.setAttribute('data-has-trans', 'done');
-            } else {
+    
+    try {
+        chrome.storage.sync.get(['writingMode', 'targetLang'], (prefs) => {
+            if (chrome.runtime.lastError || !chrome.runtime?.id) {
+                hideLoading();
                 img.removeAttribute('data-has-trans');
+                return;
+            }
+
+            try {
+                chrome.runtime.sendMessage({ type: "TRANSLATE_IMAGE", imgSrc: img.src }, (response) => {
+                    hideLoading();
+                    if (chrome.runtime.lastError) {
+                        img.removeAttribute('data-has-trans');
+                        return;
+                    }
+                    if (response && response.success) {
+                        renderOverlay(img, response.data, prefs.writingMode || 'auto');
+                        img.setAttribute('data-has-trans', 'done');
+                    } else {
+                        img.removeAttribute('data-has-trans');
+                    }
+                });
+            } catch (innerErr) {
+                // 捕获 Extension context invalidated 同步异常
+                img.removeAttribute('data-has-trans');
+                hideLoading();
             }
         });
-    });
+    } catch (e) {
+        img.removeAttribute('data-has-trans');
+        hideLoading();
+    }
 }
 
 function showLoading() {

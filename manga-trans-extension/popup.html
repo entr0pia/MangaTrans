@@ -88,11 +88,11 @@
     </div>
     <div class="config-item">
         <label for="modelName">模型名称</label>
-        <input type="text" id="modelName" placeholder="gpt-4o-mini">
+        <input type="text" id="modelName" placeholder="gemini-3.1-flash-lite-preview">
     </div>
-<div class="divider"></div>
+    <div class="divider"></div>
 
-<div class="grid-2">
+    <div class="grid-2">
     <div class="config-item">
         <label for="targetLang">目标语言</label>
         <select id="targetLang">
@@ -113,11 +113,12 @@
             </select>
         </div>
         </div>
-        
+
         <div class="config-item">
             <label for="reasoningEffort">推理等级</label>
             <select id="reasoningEffort" style="padding: 6px 10px;">
-                <option value="minimal">Minimal (推荐)</option>
+                <option value="minimal">Minimal (默认)</option>
+                <option value="none">none (关闭)</option>
                 <option value="low">Low</option>
                 <option value="medium">Medium</option>
                 <option value="high">High</option>

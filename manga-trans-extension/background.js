@@ -120,34 +120,73 @@ ${glossaryContext ? `请务必遵循以下已有的翻译对照：\n${glossaryCo
 
 不要输出 JSON 以外的文字。`;
 
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30秒超时
+
     try {
-        const imgBlob = await fetch(imgSrc).then(r => r.blob());
-        const base64Data = await new Promise((resolve) => {
+        console.log(`[MangaTrans] 正在获取图片: ${imgSrc} (重试: ${retryCount})`);
+        // 使用简单的 fetch，配合 manifest 中的 host_permissions
+        const imgBlob = await fetch(imgSrc, {
+            headers: { 'Referer': new URL(imgSrc).origin }
+        }).then(r => {
+            if (!r.ok) throw new Error(`图片获取失败: ${r.status}`);
+            return r.blob();
+        });
+
+        const base64Data = await new Promise((resolve, reject) => {
             const reader = new FileReader();
             reader.onloadend = () => resolve(reader.result);
+            reader.onerror = reject;
             reader.readAsDataURL(imgBlob);
         });
+
+        const requestBody = {
+            model: modelName || "gemini-3.1-flash-lite-preview",
+            messages: [{ role: "user", content: [{ type: "text", text: prompt }, { type: "image_url", image_url: { url: base64Data } }] }]
+        };
+
+        // 如果设置了推理等级（包括 'none'），则发送该参数并移除 temperature
+        if (reasoningEffort) {
+            requestBody.reasoning_effort = reasoningEffort;
+        } else {
+            requestBody.temperature = 0;
+        }
+
+        console.log(`[MangaTrans] API 请求参数:`, JSON.stringify(requestBody, null, 2));
+
         const response = await fetch(finalUrl, {
             method: "POST",
             headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` },
-            body: JSON.stringify({
-                model: modelName || "gpt-4o-mini",
-                messages: [{ role: "user", content: [{ type: "text", text: prompt }, { type: "image_url", image_url: { url: base64Data } }] }],
-                temperature: 0,
-                ...(reasoningEffort && { reasoning_effort: reasoningEffort })
-            }),
+            body: JSON.stringify(requestBody),
             signal: controller.signal
         });
 
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        if (!response.ok) {
+            const errorBody = await response.text();
+            throw new Error(`API 响应错误: ${response.status} - ${errorBody}`);
+        }
+
         const result = await response.json();
+        console.log(`[MangaTrans] API 响应成功`);
         const content = result.choices[0].message.content;
         const parsed = parseSafeJSON(content);
         if (parsed.new_terms) Object.assign(tabGlossaries[tabId], parsed.new_terms);
         return parsed.translations || [];
     } catch (error) {
-        if (retryCount < 2) return callOpenAITranslate(imgSrc, config, tabId, retryCount + 1);
+        if (error.name === 'AbortError') {
+            console.error(`[MangaTrans] 请求超时 (30s)`);
+        } else {
+            console.error(`[MangaTrans] 翻译失败: ${error.message}`);
+        }
+
+        if (retryCount < 2) {
+            console.log(`[MangaTrans] 1秒后进行重试...`);
+            await new Promise(r => setTimeout(r, 1000));
+            return callOpenAITranslate(imgSrc, config, tabId, retryCount + 1);
+        }
         throw error;
+    } finally {
+        clearTimeout(timeoutId);
     }
 }
 

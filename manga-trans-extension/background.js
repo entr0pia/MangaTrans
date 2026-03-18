@@ -88,7 +88,7 @@ async function callOpenAITranslate(imgSrc, config, tabId, retryCount = 0) {
 排版方式：${modeText}
 要求：
 1. 译文请提供平铺的文本，不要包含换行符。
-2. 对于竖排文本，请确保 box 高度能够至少容纳 3.8 个全角字符。如果译文长度(不是token, 含标点) <=3，排成一列即可，横排同理
+2. 对于竖排文本，请确保 box 高度能够至少容纳 3.9 个全角字符。如果字符数量(不是token数量, 含标点) <=3，排成一列即可，横排同理
 3. 如果翻译成中文标点会占两个字符，则只返回一半，如：省略号返回“…”，破折号返回“—”
 4. 引号始终使用繁体引号：单引号「 」，双引号『 』
 5. direction字段 为vertical 或 horizontal
@@ -152,8 +152,6 @@ ${glossaryContext ? `请务必遵循以下已有的翻译对照：\n${glossaryCo
             requestBody.temperature = 0;
         }
 
-        console.log(`[MangaTrans] API 请求参数:`, JSON.stringify(requestBody, null, 2));
-
         const response = await fetch(finalUrl, {
             method: "POST",
             headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` },
@@ -167,8 +165,9 @@ ${glossaryContext ? `请务必遵循以下已有的翻译对照：\n${glossaryCo
         }
 
         const result = await response.json();
-        console.log(`[MangaTrans] API 响应成功`);
         const content = result.choices[0].message.content;
+        console.log(`[MangaTrans] API 响应成功 (Usage):`, result.usage);
+        console.log(`[MangaTrans] 翻译结果 (Content):`, content);
         const parsed = parseSafeJSON(content);
         if (parsed.new_terms) Object.assign(tabGlossaries[tabId], parsed.new_terms);
         return parsed.translations || [];

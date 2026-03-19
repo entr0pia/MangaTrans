@@ -30,12 +30,28 @@ async function registerMainWorldScript() {
     try {
         const scripts = await chrome.scripting.getRegisteredContentScripts();
         if (scripts.some(s => s.id === 'shadow-proxy')) await chrome.scripting.unregisterContentScripts({ ids: ['shadow-proxy'] });
+        
+        // 与 manifest.json 同步的域名列表
+        const matches = [
+            "*://*.manhuagui.com/*", "*://*.mhgui.com/*",
+            "*://*.18comic.vip/*", "*://*.18comic.org/*",
+            "*://*.jm-comic.me/*", "*://*.jm-comic.org/*",
+            "*://*.copymanga.org/*", "*://*.copymanga.tv/*",
+            "*://*.mangacopy.com/*", "*://*.dm5.com/*",
+            "*://*.mangabz.com/*", "*://*.komiic.com/*",
+            "*://*.wnacg.com/*", "*://*.wnacg.org/*",
+            "*://*.hanime1.me/*", "*://*.hitomi.la/*",
+            "*://*.mangadex.org/*", "*://*.pixiv.net/*",
+            "*://*.e-hentai.org/*", "*://*.exhentai.org/*",
+            "*://*.nhentai.net/*", "*://*.yamibo.com/*"
+        ];
+
         await chrome.scripting.registerContentScripts([{
             id: 'shadow-proxy', world: 'MAIN',
-            matches: ["<all_urls>"],
+            matches: matches,
             js: ['inject.js'], runAt: 'document_start'
         }]);
-        console.log("[MangaTrans] Shadow proxy registered globally via scripting API");
+        console.log("[MangaTrans] Shadow proxy registered for extended whitelist");
     } catch (err) { console.error("[MangaTrans] Script registration failed:", err); }
 }
 

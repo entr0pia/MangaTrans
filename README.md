@@ -9,7 +9,7 @@
 
 ![演示图 2](imgs/PixPin_26-03-14_23-56-22.jpg)
 
-## 适配网站
+## 适配网站(不配合ComicRead.js脚本时)
 
 - [x] **[漫画柜 (看漫画)](https://www.manhuagui.com/)**
 

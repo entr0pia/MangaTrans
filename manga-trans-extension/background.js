@@ -42,14 +42,12 @@ async function registerMainWorldScript() {
 chrome.runtime.onInstalled.addListener(() => { setupRefererRule(); registerMainWorldScript(); });
 chrome.runtime.onStartup.addListener(() => { setupRefererRule(); registerMainWorldScript(); });
 
-// 监听标签页重载：重置开关与术语表
+// 监听标签页重载：重置术语表
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
     if (changeInfo.status === 'loading' && tab.url) {
-        // 全局重置逻辑：只要是正常网页刷新且非哈希跳转，就重置翻译状态
         if (!tab.url.startsWith('chrome://') && !tab.url.includes('#')) {
-            console.log(`[MangaTrans] 标签页 ${tabId} 刷新，重置状态`);
+            console.log(`[MangaTrans] 标签页 ${tabId} 刷新，重置术语表`);
             delete tabGlossaries[tabId];
-            chrome.storage.sync.set({ isAutoTranslate: false });
         }
     }
 });

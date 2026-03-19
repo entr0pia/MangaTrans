@@ -7,9 +7,14 @@
 })();
 
 // --- 状态管理 ---
-let isAutoTranslate = false; // 内存变量，页面刷新即重置
+let isAutoTranslate = false;
 let currentCid = null;
 let lastPathname = location.pathname;
+
+function getUrlKey() {
+    // 使用 origin + pathname 作为 Key，忽略 search 和 hash
+    return "trans_state_" + location.origin + location.pathname;
+}
 
 // 使用 IntersectionObserver 监听图片进入视口
 const imageObserver = new IntersectionObserver((entries) => {
@@ -35,11 +40,11 @@ function updateLocalState(enabled) {
     const checkbox = document.getElementById('manga-trans-check');
     if (checkbox) checkbox.checked = enabled;
     if (enabled) {
-        console.log("[MangaTrans] 翻译已启用");
+        console.log("[MangaTrans] 翻译已启用 (" + location.pathname + ")");
         resetMangaState();
         deepScanAndObserve();
     } else {
-        console.log("[MangaTrans] 翻译已关闭");
+        console.log("[MangaTrans] 翻译已关闭 (" + location.pathname + ")");
         resetMangaState();
     }
 }
@@ -51,8 +56,8 @@ chrome.runtime.onMessage.addListener((request) => {
         if (newPath !== lastPathname) {
             console.log(`[MangaTrans] 路径变更: ${lastPathname} -> ${newPath}`);
             lastPathname = newPath;
-            isAutoTranslate = false;
-            chrome.storage.sync.set({ isAutoTranslate: false });
+            // 路径变化时，重新初始化该路径的状态
+            handleInitialState();
             document.getElementById('manga-trans-container')?.remove();
             resetMangaState();
             injectUI();
@@ -62,14 +67,15 @@ chrome.runtime.onMessage.addListener((request) => {
 
 // 监听 storage 变化
 chrome.storage.onChanged.addListener((changes) => {
-    if (changes.isAutoTranslate) {
-        updateLocalState(changes.isAutoTranslate.newValue);
+    const key = getUrlKey();
+    if (changes[key]) {
+        updateLocalState(!!changes[key].newValue);
     } else if (isAutoTranslate) {
         // 检查是否有任何配置项发生了变化
         const hasConfigChanged = [
             'writingMode', 'targetLang', 'baseUrl', 
             'apiKey', 'modelName', 'reasoningEffort'
-        ].some(key => changes[key]);
+        ].some(k => changes[k]);
 
         if (hasConfigChanged) {
             console.log("[MangaTrans] 配置变更，正在重新翻译...");
@@ -85,10 +91,8 @@ function checkChapterChange() {
     const cidMatch = path.match(/\/comic\/\d+\/(\d+)\.html/) || path.match(/\/photo\/(\d+)/);
     const newCid = cidMatch ? cidMatch[1] : null;
     if (currentCid && newCid !== currentCid) {
-        isAutoTranslate = false;
-        document.getElementById('manga-trans-container')?.remove();
-        chrome.storage.sync.set({ isAutoTranslate: false });
-        updateLocalState(false);
+        currentCid = newCid;
+        handleInitialState();
     }
     currentCid = newCid;
 }
@@ -159,7 +163,11 @@ function injectUI() {
         `;
         document.body.appendChild(container);
         const cb = document.getElementById('manga-trans-check');
-        cb.addEventListener('change', (e) => chrome.storage.sync.set({ isAutoTranslate: e.target.checked }));
+        cb.addEventListener('change', (e) => {
+            const state = {};
+            state[getUrlKey()] = e.target.checked;
+            chrome.storage.sync.set(state);
+        });
     }
 }
 
@@ -355,10 +363,9 @@ function setupObservers() {
 }
 
 async function handleInitialState() {
-    const navs = performance.getEntriesByType("navigation");
-    const isReload = navs.length > 0 && navs[0].type === "reload";
-    if (isReload) { await chrome.storage.sync.set({ isAutoTranslate: false }); updateLocalState(false); }
-    else { const result = await chrome.storage.sync.get(['isAutoTranslate']); updateLocalState(!!result.isAutoTranslate); }
+    const key = getUrlKey();
+    const result = await chrome.storage.sync.get([key]);
+    updateLocalState(!!result[key]);
 }
 
 handleInitialState();

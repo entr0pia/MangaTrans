@@ -1,3 +1,11 @@
+// --- 基础注入 ---
+(function() {
+    const s = document.createElement('script');
+    s.src = chrome.runtime.getURL('inject.js');
+    s.onload = function() { this.remove(); };
+    (document.head || document.documentElement).appendChild(s);
+})();
+
 // --- 状态管理 ---
 let isAutoTranslate = false; // 内存变量，页面刷新即重置
 let currentCid = null;
@@ -88,20 +96,46 @@ function checkChapterChange() {
 // --- 深度探测逻辑 ---
 function deepScanAndObserve() {
     if (!isAutoTranslate) return;
+    
     function scan(node) {
+        if (!node) return;
+
+        // 处理图片元素
         if (node.tagName === 'IMG') {
             const rect = node.getBoundingClientRect();
-            if (node.src && (rect.width > 100 || node.naturalWidth > 100)) {
+            // 如果图片还未加载（宽高为0），但有 src，也应当观察
+            // 漫画图片通常宽度都很大
+            const isPotentialManga = node.src && (
+                rect.width > 100 || 
+                node.naturalWidth > 100 || 
+                (rect.width === 0 && node.getAttribute('src')) 
+            );
+
+            if (isPotentialManga) {
                 imageObserver.observe(node);
-                if (rect.top < window.innerHeight && rect.bottom > 0) triggerSingleTranslation(node);
+                // 已经在视口内的立即触发
+                if (rect.top < window.innerHeight && rect.bottom > 0 && rect.height > 0) {
+                    triggerSingleTranslation(node);
+                }
             }
         }
-        if (node.shadowRoot) scanChildren(node.shadowRoot);
+
+        // 递归探测 Shadow DOM
+        if (node.shadowRoot) {
+            scanChildren(node.shadowRoot);
+        }
+        
+        // 递归探测普通子节点
         scanChildren(node);
     }
+
     function scanChildren(parent) {
-        for (let i = 0; i < parent.children.length; i++) scan(parent.children[i]);
+        if (!parent || !parent.children) return;
+        for (let i = 0; i < parent.children.length; i++) {
+            scan(parent.children[i]);
+        }
     }
+
     scan(document.documentElement);
 }
 
@@ -138,19 +172,60 @@ async function triggerSingleTranslation(img) {
         return;
     }
 
+    // 辅助函数：尝试本地抓取图片数据
+    const captureImage = async (imageEl) => {
+        try {
+            if (!imageEl.complete || imageEl.naturalWidth === 0) {
+                console.log("[MangaTrans] 图片未加载完成，跳过 Canvas 捕获:", imageEl.src);
+                return null;
+            }
+            
+            // 尝试 1: Canvas 直接绘制 (最快，但受 CORS 限制)
+            try {
+                const canvas = document.createElement('canvas');
+                canvas.width = imageEl.naturalWidth;
+                canvas.height = imageEl.naturalHeight;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(imageEl, 0, 0);
+                const data = canvas.toDataURL('image/jpeg', 0.85);
+                console.log("[MangaTrans] Canvas 捕获成功:", imageEl.src.substring(0, 50) + "...");
+                return data;
+            } catch (canvasErr) {
+                // 尝试 2: 如果 Canvas 失败（通常是跨域），在 content 侧进行 fetch
+                // 在 content 侧 fetch 能利用浏览器已经下载好的缓存，且能处理 Blob URL
+                console.log("[MangaTrans] Canvas 捕获受限，尝试本地 Fetch:", imageEl.src);
+                const response = await fetch(imageEl.src);
+                const blob = await response.blob();
+                return await new Promise((resolve) => {
+                    const reader = new FileReader();
+                    reader.onloadend = () => resolve(reader.result);
+                    reader.readAsDataURL(blob);
+                });
+            }
+        } catch (e) {
+            console.warn("[MangaTrans] 本地捕获彻底失败，回退到后台获取:", e.message);
+            return null;
+        }
+    };
+
+    const localBase64 = await captureImage(img);
     img.setAttribute('data-has-trans', 'loading');
     showLoading();
     
     try {
         chrome.storage.sync.get(['writingMode', 'targetLang'], (prefs) => {
-            if (chrome.runtime.lastError || !chrome.runtime?.id) {
+            if (!chrome.runtime?.id) {
                 hideLoading();
                 img.removeAttribute('data-has-trans');
                 return;
             }
 
             try {
-                chrome.runtime.sendMessage({ type: "TRANSLATE_IMAGE", imgSrc: img.src }, (response) => {
+                chrome.runtime.sendMessage({ 
+                    type: "TRANSLATE_IMAGE", 
+                    imgSrc: img.src,
+                    imgData: localBase64 // 优先传递本地捕获的数据
+                }, (response) => {
                     hideLoading();
                     if (chrome.runtime.lastError) {
                         img.removeAttribute('data-has-trans');
@@ -164,7 +239,6 @@ async function triggerSingleTranslation(img) {
                     }
                 });
             } catch (innerErr) {
-                // 捕获 Extension context invalidated 同步异常
                 img.removeAttribute('data-has-trans');
                 hideLoading();
             }
@@ -194,11 +268,32 @@ function renderOverlay(imgElement, results, userWritingMode) {
     if (!Array.isArray(results) || !imgElement.isConnected) return;
     const parent = imgElement.parentElement;
     if (!parent) return;
+    
+    // 确保父容器有定位属性
     if (getComputedStyle(parent).position === 'static') parent.style.position = 'relative';
-    parent.querySelectorAll('.manga-trans-overlay-container').forEach(c => c.remove());
+    
+    // 使用唯一的 ID 标识每张图片的翻译层，防止卷轴模式下误删其他页面的翻译
+    const overlayId = `manga-trans-overlay-${Math.random().toString(36).substr(2, 9)}`;
+    const oldOverlayId = imgElement.getAttribute('data-overlay-id');
+    if (oldOverlayId) {
+        parent.querySelector(`#${oldOverlayId}`)?.remove();
+    }
+    imgElement.setAttribute('data-overlay-id', overlayId);
+
     const container = document.createElement('div');
+    container.id = overlayId;
     container.className = 'manga-trans-overlay-container';
-    container.style.cssText = `position:absolute; top:0; left:0; width:100%; height:100%; pointer-events:none; z-index:100;`;
+    
+    // 关键修复：翻译容器应与图片在父容器中的位置完全一致
+    const rect = {
+        top: imgElement.offsetTop,
+        left: imgElement.offsetLeft,
+        width: imgElement.clientWidth,
+        height: imgElement.clientHeight
+    };
+    
+    container.style.cssText = `position:absolute; top:${rect.top}px; left:${rect.left}px; width:${rect.width}px; height:${rect.height}px; pointer-events:none; z-index:2147483647;`;
+    
     results.forEach(item => {
         const box = item.box || item.box_2d;
         if (!box) return;
@@ -212,15 +307,16 @@ function renderOverlay(imgElement, results, userWritingMode) {
             .replace(/——/g, '—');
 
         let isVertical = (userWritingMode === 'vertical') || (userWritingMode === 'auto' && (item.direction ? item.direction === 'vertical' : heightPct > widthPct * 1.1));
-        const physWidth = (widthPct / 100) * imgElement.clientWidth;
-        const physHeight = (heightPct / 100) * imgElement.clientHeight;
+        
+        // 基于图片当前显示宽高的动态字号
+        const physWidth = (widthPct / 100) * rect.width;
+        const physHeight = (heightPct / 100) * rect.height;
         const shortSide = Math.min(physWidth, physHeight);
         let fontSize = Math.max(10, Math.min(22, shortSide * 0.45));
         if (text.length > 15) fontSize *= 0.85;
 
         let extraStyles = '';
         if (isVertical) {
-            // 竖排优化：增加行高，允许稍微超出原框以容纳标点，移除 upright 确保标点旋转
             const absoluteMinH = Math.min(text.length, 3) * fontSize * 1.2;
             const effectiveMaxH = Math.max(physHeight * 1.2, absoluteMinH);
             extraStyles = `writing-mode:vertical-rl; display:block; height:fit-content; max-height:${effectiveMaxH}px; width:fit-content; max-width:${Math.max(physWidth * 1.5, 200)}px; letter-spacing:1px; line-break:anywhere; direction:ltr !important; unicode-bidi:isolate !important; padding: 4px 6px;`;

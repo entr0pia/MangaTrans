@@ -6,13 +6,7 @@
   "description": "基于大模型的智能漫画翻译助手，支持自动翻译、术语一致性及阅读模式适配。",
   "permissions": ["storage", "activeTab", "scripting", "declarativeNetRequest", "webNavigation"],
   "host_permissions": [
-    "*://*.manhuagui.com/*",
-    "*://*.mhgui.com/*",
-    "*://*.18comic.vip/*",
-    "*://*.18comic.org/*",
-    "*://*.jm-comic.me/*",
-    "*://*.jm-comic.org/*",
-    "https://*.hamreus.com/*"
+    "<all_urls>"
   ],
   "action": {
     "default_popup": "popup.html",
@@ -33,12 +27,7 @@
   "content_scripts": [
     {
       "matches": [
-        "*://*.manhuagui.com/comic/*/*.html*",
-        "*://*.mhgui.com/comic/*/*.html*",
-        "*://*.18comic.vip/photo/*",
-        "*://*.18comic.org/photo/*",
-        "*://*.jm-comic.me/photo/*",
-        "*://*.jm-comic.org/photo/*"
+        "<all_urls>"
       ],
       "js": ["content.js"],
       "css": ["style.css"],

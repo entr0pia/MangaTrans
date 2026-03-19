@@ -32,14 +32,10 @@ async function registerMainWorldScript() {
         if (scripts.some(s => s.id === 'shadow-proxy')) await chrome.scripting.unregisterContentScripts({ ids: ['shadow-proxy'] });
         await chrome.scripting.registerContentScripts([{
             id: 'shadow-proxy', world: 'MAIN',
-            matches: [
-                "*://*.manhuagui.com/*", "*://*.mhgui.com/*",
-                "*://*.18comic.vip/*", "*://*.18comic.org/*",
-                "*://*.jm-comic.me/*", "*://*.jm-comic.org/*"
-            ],
+            matches: ["<all_urls>"],
             js: ['inject.js'], runAt: 'document_start'
         }]);
-        console.log("[MangaTrans] Shadow proxy registered via scripting API");
+        console.log("[MangaTrans] Shadow proxy registered globally via scripting API");
     } catch (err) { console.error("[MangaTrans] Script registration failed:", err); }
 }
 
@@ -49,8 +45,8 @@ chrome.runtime.onStartup.addListener(() => { setupRefererRule(); registerMainWor
 // 监听标签页重载：重置开关与术语表
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
     if (changeInfo.status === 'loading' && tab.url) {
-        const isMangaSite = tab.url.includes("manhuagui.com") || tab.url.includes("18comic") || tab.url.includes("jm-comic");
-        if (isMangaSite && !tab.url.includes('#')) {
+        // 全局重置逻辑：只要是正常网页刷新且非哈希跳转，就重置翻译状态
+        if (!tab.url.startsWith('chrome://') && !tab.url.includes('#')) {
             console.log(`[MangaTrans] 标签页 ${tabId} 刷新，重置状态`);
             delete tabGlossaries[tabId];
             chrome.storage.sync.set({ isAutoTranslate: false });
@@ -60,8 +56,7 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
 
 // 使用 webNavigation 监听 SPA 路径变化
 chrome.webNavigation.onHistoryStateUpdated.addListener((details) => {
-    const isMangaSite = details.url.includes("manhuagui.com") || details.url.includes("18comic") || details.url.includes("jm-comic");
-    if (isMangaSite) {
+    if (!details.url.startsWith('chrome://')) {
         chrome.tabs.sendMessage(details.tabId, { type: "URL_CHANGED", url: details.url }).catch(() => { });
     }
 });
@@ -69,10 +64,13 @@ chrome.webNavigation.onHistoryStateUpdated.addListener((details) => {
 chrome.tabs.onRemoved.addListener((tabId) => delete tabGlossaries[tabId]);
 
 // --- 翻译逻辑 ---
-async function callOpenAITranslate(imgSrc, config, tabId, retryCount = 0) {
+async function callOpenAITranslate(imgSrc, config, tabId, retryCount = 0, providedBase64 = null) {
     const { baseUrl, apiKey, modelName, targetLang, writingMode, reasoningEffort } = config;
     const finalUrl = `${baseUrl.replace(/\/$/, '')}/chat/completions`;
     const finalLang = targetLang || "简体中文";
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30秒超时
 
     // 处理排版方式变量
     let modeText = "自动判断（根据原文横排或竖排）";
@@ -120,25 +118,27 @@ ${glossaryContext ? `请务必遵循以下已有的翻译对照：\n${glossaryCo
 
 不要输出 JSON 以外的文字。`;
 
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30秒超时
-
     try {
-        console.log(`[MangaTrans] 正在获取图片: ${imgSrc} (重试: ${retryCount})`);
-        // 使用简单的 fetch，配合 manifest 中的 host_permissions
-        const imgBlob = await fetch(imgSrc, {
-            headers: { 'Referer': new URL(imgSrc).origin }
-        }).then(r => {
-            if (!r.ok) throw new Error(`图片获取失败: ${r.status}`);
-            return r.blob();
-        });
+        let base64Data = providedBase64;
 
-        const base64Data = await new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onloadend = () => resolve(reader.result);
-            reader.onerror = reject;
-            reader.readAsDataURL(imgBlob);
-        });
+        if (!base64Data) {
+            console.log(`[MangaTrans] 正在通过网络获取图片: ${imgSrc} (重试: ${retryCount})`);
+            const imgBlob = await fetch(imgSrc, {
+                headers: { 'Referer': new URL(imgSrc).origin }
+            }).then(r => {
+                if (!r.ok) throw new Error(`图片获取失败: ${r.status}`);
+                return r.blob();
+            });
+
+            base64Data = await new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onloadend = () => resolve(reader.result);
+                reader.onerror = reject;
+                reader.readAsDataURL(imgBlob);
+            });
+        } else {
+            console.log(`[MangaTrans] 使用本地捕获图片数据 (无网络请求)`);
+        }
 
         const requestBody = {
             model: modelName || "gemini-3.1-flash-lite-preview",
@@ -181,7 +181,7 @@ ${glossaryContext ? `请务必遵循以下已有的翻译对照：\n${glossaryCo
         if (retryCount < 2) {
             console.log(`[MangaTrans] 1秒后进行重试...`);
             await new Promise(r => setTimeout(r, 1000));
-            return callOpenAITranslate(imgSrc, config, tabId, retryCount + 1);
+            return callOpenAITranslate(imgSrc, config, tabId, retryCount + 1, providedBase64);
         }
         throw error;
     } finally {
@@ -202,7 +202,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             if (!result.apiKey) { sendResponse({ success: false, error: "未配置 API" }); return; }
             (async () => {
                 try {
-                    const data = await callOpenAITranslate(request.imgSrc, result, tabId);
+                    const data = await callOpenAITranslate(request.imgSrc, result, tabId, 0, request.imgData);
                     sendResponse({ success: true, data: data });
                 } catch (err) { sendResponse({ success: false, error: err.message }); }
             })();

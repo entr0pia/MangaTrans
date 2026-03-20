@@ -293,11 +293,15 @@ function renderOverlay(imgElement, results, userWritingMode) {
     container.className = 'manga-trans-overlay-container';
     
     // 关键修复：翻译容器应与图片在父容器中的位置完全一致
+    const imgRect = imgElement.getBoundingClientRect();
+    const parentRect = parent.getBoundingClientRect();
+    
+    // 计算图片相对于父容器的偏移
     const rect = {
-        top: imgElement.offsetTop,
-        left: imgElement.offsetLeft,
-        width: imgElement.clientWidth,
-        height: imgElement.clientHeight
+        top: imgRect.top - parentRect.top,
+        left: imgRect.left - parentRect.left,
+        width: imgRect.width,
+        height: imgRect.height
     };
     
     container.style.cssText = `position:absolute; top:${rect.top}px; left:${rect.left}px; width:${rect.width}px; height:${rect.height}px; pointer-events:none; z-index:2147483647;`;
@@ -339,7 +343,8 @@ function renderOverlay(imgElement, results, userWritingMode) {
         
         const textSpan = document.createElement('span');
         textSpan.innerText = text;
-        textSpan.style.cssText = `background: white; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.3); font-weight: bold; color: black; font-size: ${fontSize}px; line-height: 1.3; word-break: break-all; border: 2px dashed #ff4d4f; box-sizing: border-box; white-space: normal; ${extraStyles}`;
+        // 增加 text-size-adjust: 100% 防止系统字体缩放干扰
+        textSpan.style.cssText = `background: white; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.3); font-weight: bold; color: black; font-size: ${fontSize}px; line-height: 1.3; word-break: break-all; border: 2px dashed #ff4d4f; box-sizing: border-box; white-space: normal; text-size-adjust: 100%; -webkit-text-size-adjust: 100%; ${extraStyles}`;
         
         textBox.appendChild(textSpan);
         container.appendChild(textBox);

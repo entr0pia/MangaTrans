@@ -324,7 +324,18 @@ function renderOverlay(imgElement, results, userWritingMode) {
         const physWidth = (widthPct / 100) * rect.width;
         const physHeight = (heightPct / 100) * rect.height;
         const shortSide = Math.min(physWidth, physHeight);
+        
+        // 获取系统缩放比例 (DPR)
+        const dpr = window.devicePixelRatio || 1;
+        // 基础字号计算
         let fontSize = Math.max(10, Math.min(22, shortSide * 0.45));
+        
+        // 高 DPI 反向补偿逻辑：使用 DPR 的算术平方根进行平滑补偿
+        // 这样可以抵消系统缩放对文字的放大效应，同时避免补偿过度导致文字太小
+        if (dpr > 1.1) {
+            fontSize = fontSize / Math.sqrt(dpr);
+        }
+
         if (text.length > 15) fontSize *= 0.85;
 
         let extraStyles = '';

@@ -236,6 +236,7 @@ async function triggerSingleTranslation(img) {
                 }, (response) => {
                     hideLoading();
                     if (chrome.runtime.lastError) {
+                        // 环境失效或连接丢失，这种情况不标记 error，允许刷新后重试
                         img.removeAttribute('data-has-trans');
                         return;
                     }
@@ -243,7 +244,10 @@ async function triggerSingleTranslation(img) {
                         renderOverlay(img, response.data, prefs.writingMode || 'auto');
                         img.setAttribute('data-has-trans', 'done');
                     } else {
-                        img.removeAttribute('data-has-trans');
+                        // 翻译失败（如 403 或 API 报错）
+                        // 关键修复：将其标记为 error 而不是移除属性，防止 setInterval 导致死循环
+                        console.warn("[MangaTrans] 翻译失败，停止重试此图:", img.src);
+                        img.setAttribute('data-has-trans', 'error');
                     }
                 });
             } catch (innerErr) {

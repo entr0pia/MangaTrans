@@ -185,22 +185,28 @@ ${glossaryContext ? `请务必遵循以下已有的翻译对照：\n${glossaryCo
         if (parsed.new_terms) Object.assign(tabGlossaries[tabId], parsed.new_terms);
         return parsed.translations || [];
     } catch (error) {
-        const is403 = error.message.includes("403");
-        
-        if (error.name === 'AbortError') {
-            console.error(`[MangaTrans] 请求超时 (30s)`);
+        // 错误分类判定
+        const errorMsg = error.message || "";
+        const is403 = errorMsg.includes("403");
+        const isFetchFailed = errorMsg.includes("Failed to fetch") || errorMsg.includes("图片获取失败");
+        const isAbort = error.name === 'AbortError' || errorMsg.includes("超时");
+
+        if (isAbort) {
+            console.error(`[MangaTrans] 请求超时 (30s): ${imgSrc}`);
         } else {
-            console.error(`[MangaTrans] 翻译失败: ${error.message}`);
+            console.error(`[MangaTrans] 翻译失败: ${errorMsg}`);
         }
 
-        // 如果是 403 错误，通常是防盗链，重试无用，直接放弃
-        if (is403) {
-            console.warn(`[MangaTrans] 检测到 403 错误，停止重试`);
+        // 判定是否应当彻底放弃重试
+        // 1. 明确的 403 (防盗链)
+        // 2. 基础 fetch 失败 (通常是 CORS 或 域名无法解析)，这种错误重试 100 次也没用
+        if (is403 || isFetchFailed) {
+            console.warn(`[MangaTrans] 关键性抓取失败，停止重试: ${imgSrc}`);
             throw error;
         }
 
         if (retryCount < 2) {
-            console.log(`[MangaTrans] 1秒后进行重试...`);
+            console.log(`[MangaTrans] 正在进行第 ${retryCount + 1} 次重试...`);
             await new Promise(r => setTimeout(r, 1000));
             return callOpenAITranslate(imgSrc, config, tabId, retryCount + 1, providedBase64);
         }

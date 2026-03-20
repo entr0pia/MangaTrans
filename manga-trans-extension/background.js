@@ -186,10 +186,18 @@ ${glossaryContext ? `请务必遵循以下已有的翻译对照：\n${glossaryCo
         if (parsed.new_terms) Object.assign(tabGlossaries[tabId], parsed.new_terms);
         return parsed.translations || [];
     } catch (error) {
+        const is403 = error.message.includes("403");
+        
         if (error.name === 'AbortError') {
             console.error(`[MangaTrans] 请求超时 (30s)`);
         } else {
             console.error(`[MangaTrans] 翻译失败: ${error.message}`);
+        }
+
+        // 如果是 403 错误，通常是防盗链，重试无用，直接放弃
+        if (is403) {
+            console.warn(`[MangaTrans] 检测到 403 错误，停止重试`);
+            throw error;
         }
 
         if (retryCount < 2) {

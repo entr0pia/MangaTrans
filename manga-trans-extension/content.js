@@ -338,8 +338,7 @@ function renderOverlay(imgElement, results, userWritingMode) {
 
         let isVertical = (userWritingMode === 'vertical') || (userWritingMode === 'auto' && (item.direction ? item.direction === 'vertical' : heightPct > widthPct * 1.1));
         
-        // 字号计算逻辑（在同步函数中会间接通过百分比定位生效）
-        // 这里仍需计算一个基础字号
+        // 字号计算逻辑
         const baseImgWidth = imgElement.clientWidth || 800;
         const baseImgHeight = imgElement.clientHeight || 1200;
         const physWidth = (widthPct / 100) * baseImgWidth;
@@ -347,8 +346,11 @@ function renderOverlay(imgElement, results, userWritingMode) {
         const shortSide = Math.min(physWidth, physHeight);
         
         const dpr = window.devicePixelRatio || 1;
-        let fontSize = Math.max(10, Math.min(22, shortSide * 0.45));
-        if (dpr > 1.1) fontSize = fontSize / Math.sqrt(dpr);
+        // 范围限制在 14-24px
+        let fontSize = Math.max(14, Math.min(24, shortSide * 0.45));
+        // 直接除以 dpr 进行反向补偿，以抵消系统缩放
+        if (dpr > 1) fontSize = fontSize / dpr;
+        
         if (text.length > 15) fontSize *= 0.85;
 
         let extraStyles = '';

@@ -87,7 +87,7 @@ async function callOpenAITranslate(imgSrc, config, tabId, retryCount = 0, provid
     const timeoutId = setTimeout(() => controller.abort(), 30000); // 30秒超时
 
     // 处理排版方式变量
-    let modeText = "自动判断（根据原文横排或竖排）";
+    let modeText = "自动判断（跟随原文横排或竖排）";
     if (writingMode === 'vertical') modeText = "强制竖排";
     else if (writingMode === 'horizontal') modeText = "强制横排";
 

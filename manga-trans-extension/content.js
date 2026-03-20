@@ -280,7 +280,7 @@ function renderOverlay(imgElement, results, userWritingMode) {
     // 确保父容器有定位属性
     if (getComputedStyle(parent).position === 'static') parent.style.position = 'relative';
     
-    // 使用唯一的 ID 标识每张图片的翻译层，防止卷轴模式下误删其他页面的翻译
+    // 使用唯一的 ID 标识每张图片的翻译层
     const overlayId = `manga-trans-overlay-${Math.random().toString(36).substr(2, 9)}`;
     const oldOverlayId = imgElement.getAttribute('data-overlay-id');
     if (oldOverlayId) {
@@ -292,20 +292,34 @@ function renderOverlay(imgElement, results, userWritingMode) {
     container.id = overlayId;
     container.className = 'manga-trans-overlay-container';
     
-    // 关键修复：翻译容器应与图片在父容器中的位置完全一致
-    const imgRect = imgElement.getBoundingClientRect();
-    const parentRect = parent.getBoundingClientRect();
-    
-    // 计算图片相对于父容器的偏移
-    const rect = {
-        top: imgRect.top - parentRect.top,
-        left: imgRect.left - parentRect.left,
-        width: imgRect.width,
-        height: imgRect.height
+    // 初始对齐逻辑
+    const syncPosition = () => {
+        if (!imgElement.isConnected) {
+            observer.disconnect();
+            container.remove();
+            return;
+        }
+        const iRect = imgElement.getBoundingClientRect();
+        const pRect = parent.getBoundingClientRect();
+        
+        container.style.top = `${iRect.top - pRect.top}px`;
+        container.style.left = `${iRect.left - pRect.left}px`;
+        container.style.width = `${iRect.width}px`;
+        container.style.height = `${iRect.height}px`;
+        
+        // 如果图片高度为0，暂时隐藏翻译层避免错位
+        container.style.display = iRect.height > 0 ? 'block' : 'none';
     };
+
+    container.style.cssText = `position:absolute; pointer-events:none; z-index:2147483647;`;
+    syncPosition();
     
-    container.style.cssText = `position:absolute; top:${rect.top}px; left:${rect.left}px; width:${rect.width}px; height:${rect.height}px; pointer-events:none; z-index:2147483647;`;
-    
+    // 使用 ResizeObserver 监听图片的位置和尺寸变化，确保实时对齐
+    const observer = new ResizeObserver(() => syncPosition());
+    observer.observe(imgElement);
+    // 同时监听父容器，应对某些布局抖动
+    observer.observe(parent);
+
     results.forEach(item => {
         const box = item.box || item.box_2d;
         if (!box) return;
@@ -320,22 +334,17 @@ function renderOverlay(imgElement, results, userWritingMode) {
 
         let isVertical = (userWritingMode === 'vertical') || (userWritingMode === 'auto' && (item.direction ? item.direction === 'vertical' : heightPct > widthPct * 1.1));
         
-        // 基于图片当前显示宽高的动态字号
-        const physWidth = (widthPct / 100) * rect.width;
-        const physHeight = (heightPct / 100) * rect.height;
+        // 字号计算逻辑（在同步函数中会间接通过百分比定位生效）
+        // 这里仍需计算一个基础字号
+        const baseImgWidth = imgElement.clientWidth || 800;
+        const baseImgHeight = imgElement.clientHeight || 1200;
+        const physWidth = (widthPct / 100) * baseImgWidth;
+        const physHeight = (heightPct / 100) * baseImgHeight;
         const shortSide = Math.min(physWidth, physHeight);
         
-        // 获取系统缩放比例 (DPR)
         const dpr = window.devicePixelRatio || 1;
-        // 基础字号计算
         let fontSize = Math.max(10, Math.min(22, shortSide * 0.45));
-        
-        // 高 DPI 反向补偿逻辑：使用 DPR 的算术平方根进行平滑补偿
-        // 这样可以抵消系统缩放对文字的放大效应，同时避免补偿过度导致文字太小
-        if (dpr > 1.1) {
-            fontSize = fontSize / Math.sqrt(dpr);
-        }
-
+        if (dpr > 1.1) fontSize = fontSize / Math.sqrt(dpr);
         if (text.length > 15) fontSize *= 0.85;
 
         let extraStyles = '';
@@ -354,7 +363,6 @@ function renderOverlay(imgElement, results, userWritingMode) {
         
         const textSpan = document.createElement('span');
         textSpan.innerText = text;
-        // 增加 text-size-adjust: 100% 防止系统字体缩放干扰
         textSpan.style.cssText = `background: white; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.3); font-weight: bold; color: black; font-size: ${fontSize}px; line-height: 1.3; word-break: break-all; border: 2px dashed #ff4d4f; box-sizing: border-box; white-space: normal; text-size-adjust: 100%; -webkit-text-size-adjust: 100%; ${extraStyles}`;
         
         textBox.appendChild(textSpan);
